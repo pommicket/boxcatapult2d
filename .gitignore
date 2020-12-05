@@ -1,0 +1,14 @@
+obj
+physics
+tags
+TAGS
+*.swp
+*~
+*.ilk
+*.pdb
+*.obj
+*.exe
+*.dll
+*.xcf
+SDL2
+.vs*
