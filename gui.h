@@ -87,6 +87,7 @@ typedef struct {
 	void *memory;
 	size_t memory_size;
 	double dt; // time in seconds between this frame and the last one
+	void (*(*get_gl_proc)(char const *))(void); // get a GL function
 	char title[64]; // window title
 } Frame;
 

@@ -2,7 +2,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 
-static struct timespec last_modified(char const *filename) {
+static struct timespec time_last_modified(char const *filename) {
 #if __unix__
 	struct stat statbuf = {0};
 	stat(filename, &statbuf);
@@ -25,6 +25,14 @@ static int timespec_cmp(struct timespec a, struct timespec b) {
 	return 0;
 }
 
+static bool timespec_eq(struct timespec a, struct timespec b) {
+	return timespec_cmp(a, b) == 0;
+}
+
+static struct timespec timespec_max(struct timespec a, struct timespec b) {
+	return timespec_cmp(a, b) < 0 ? b : a;
+}
+
 // sleep for a certain number of nanoseconds
 static void sleep_ns(u64 ns) {
 #if __unix__
@@ -42,16 +50,16 @@ static void sleep_ns(u64 ns) {
 }
 
 // sleep for microseconds
-static void sleep_us(u64 us) {
+static void time_sleep_us(u64 us) {
 	sleep_ns(us * 1000);
 }
 
 // sleep for milliseconds
-static void sleep_ms(u64 ms) {
+static void time_sleep_ms(u64 ms) {
 	sleep_ns(ms * 1000000);
 }
 
 // sleep for seconds
-static void sleep_s(u64 s) {
+static void time_sleep_s(u64 s) {
 	sleep_ns(s * 1000000000);
 }

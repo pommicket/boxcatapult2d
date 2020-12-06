@@ -213,7 +213,7 @@ int main(void) {
 	}
 
 	SDL_Window *window = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		720, 720, SDL_WINDOW_SHOWN|SDL_WINDOW_OPENGL);
+		720, 720, SDL_WINDOW_SHOWN|SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
 	if (!window) {
 		die("%s", SDL_GetError());
 	}
@@ -250,6 +250,8 @@ int main(void) {
 		die("Couldn't allocate memory (%lu bytes).", (ulong)frame.memory_size);
 	}
 
+	frame.get_gl_proc = (void (*(*)(char const *))(void))SDL_GL_GetProcAddress;
+
 	Uint32 last_frame_ticks = SDL_GetTicks();
 
 	while (1) {
@@ -279,7 +281,7 @@ int main(void) {
 	#else
 	#define DYNLIB_EXT "dll"
 	#endif
-		struct timespec new_dynlib_last_modified = last_modified("obj/sim." DYNLIB_EXT "_changed");
+		struct timespec new_dynlib_last_modified = time_last_modified("obj/sim." DYNLIB_EXT "_changed");
 		if (timespec_cmp(dynlib_last_modified, new_dynlib_last_modified) != 0) {
 			// reload dynlib
 			char new_filename[256] = {0};
