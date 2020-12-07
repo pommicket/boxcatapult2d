@@ -622,7 +622,7 @@ static void gl_color2f(float v, float a) {
 
 // color is 0xRRGGBBAA
 static void gl_rgbacolor(u32 color) {
-	glColor4ub((color >> 24) & 0xff, (color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff);
+	glColor4ub((u8)(color >> 24), (u8)(color >> 16), (u8)(color >> 8), (u8)color);
 }
 
 // color is 0xRRGGBB

@@ -4,13 +4,13 @@
 
 static struct timespec time_last_modified(char const *filename) {
 #if __unix__
-	struct stat statbuf = {0};
+	struct stat statbuf = {};
 	stat(filename, &statbuf);
 	return statbuf.st_mtim;
 #else
 	// windows' _stat does not have st_mtim
-	struct _stat statbuf = {0};
-	struct timespec ts = {0};
+	struct _stat statbuf = {};
+	struct timespec ts = {};
 	_stat(filename, &statbuf);
 	ts.tv_sec = statbuf.st_mtime;
 	return ts;
@@ -36,9 +36,9 @@ static struct timespec timespec_max(struct timespec a, struct timespec b) {
 // sleep for a certain number of nanoseconds
 static void sleep_ns(u64 ns) {
 #if __unix__
-	struct timespec rem = {0}, req = {
-		ns / 1000000000,
-		ns % 1000000000
+	struct timespec rem = {}, req = {
+		(time_t)(ns / 1000000000),
+		(long)(ns % 1000000000)
 	};
 	
 	while (nanosleep(&req, &rem) == EINTR) // sleep interrupted by signal

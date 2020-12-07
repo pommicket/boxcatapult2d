@@ -1,4 +1,4 @@
-#include "gui.h"
+#include "gui.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include "lib/glcorearb.h"
@@ -13,11 +13,19 @@
 #include <ctype.h>
 
 #define MATH_GL
-#include "math.c"
-#include "sim.h"
-#include "time.c"
-#include "util.c"
-#include "base.c"
+#include "math.cpp"
+#include "sim.hpp"
+#include "time.cpp"
+#include "util.cpp"
+#include "base.cpp"
+
+// how much to scale up objects for Box2D
+#define B2_SCALE 30
+#define B2_INV_SCALE (1.0f / B2_SCALE)
+
+static b2Vec2 v2_to_b2(v2 v) {
+	return b2Vec2(v.x, v.y);
+}
 
 // compile a vertex or fragment shader
 static GLuint shader_compile_from_file(GL *gl, char const *filename, GLenum shader_type) {
@@ -157,11 +165,26 @@ static void shaders_reload_if_necessary(State *state) {
 }
 #endif
 
+// get endpoints and bounding box of platform
+static void platform_get_coords(State *state, Platform *platform, v2 coords[6]) {
+	float radius = platform->size * 0.5f;
+	v2 thickness_r = v2_polar(state->platform_thickness, platform->angle - HALF_PIf);
+	v2 platform_r = v2_polar(radius, platform->angle);
+	v2 endpoint1 = v2_add(platform->center, platform_r);
+	v2 endpoint2 = v2_sub(platform->center, platform_r);
+	coords[0] = endpoint1;
+	coords[1] = endpoint2;
+	coords[2] = v2_sub(endpoint1, thickness_r);
+	coords[3] = v2_sub(endpoint2, thickness_r);
+	coords[4] = v2_add(endpoint2, thickness_r);
+	coords[5] = v2_add(endpoint1, thickness_r);
+}
+
 // render the given platforms
 static void platforms_render(State *state, Platform *platforms, u32 nplatforms) {
 	GL *gl = &state->gl;
 	ShaderPlatform *shader = &state->shader_platform;
-	float thickness = 0.005f;
+	float thickness = state->platform_thickness;
 
 	shader_start_using(gl, &shader->base);
 	
@@ -171,19 +194,16 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	glBegin(GL_QUADS);
 	glColor3f(1,0,1);
 	for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
-		// calculate endpoints of platform
-		maybe_unused float radius = platform->size * 0.5f;
-		v2 endpoint1 = v2_add(platform->center, v2_polar(radius, platform->angle));
-		v2 endpoint2 = v2_sub(platform->center, v2_polar(radius, platform->angle));
+		v2 coords[6];
+		platform_get_coords(state, platform, coords);
 
 	#if 1
-		v2 r = v2_polar(thickness, platform->angle - HALF_PIf);
-		gl->VertexAttrib2f(shader->vertex_p1, endpoint1.x, endpoint1.y);
-		gl->VertexAttrib2f(shader->vertex_p2, endpoint2.x, endpoint2.y);
-		v2_gl_vertex(v2_sub(endpoint1, r));
-		v2_gl_vertex(v2_sub(endpoint2, r));
-		v2_gl_vertex(v2_add(endpoint2, r));
-		v2_gl_vertex(v2_add(endpoint1, r));
+		gl->VertexAttrib2f(shader->vertex_p1, coords[0].x, coords[0].y);
+		gl->VertexAttrib2f(shader->vertex_p2, coords[1].x, coords[1].y);
+		v2_gl_vertex(coords[2]);
+		v2_gl_vertex(coords[3]);
+		v2_gl_vertex(coords[4]);
+		v2_gl_vertex(coords[5]);
 	#else
 		v2_gl_vertex(endpoint1);
 		v2_gl_vertex(endpoint2);
@@ -217,60 +237,21 @@ static void ball_render(State *state) {
 	shader_stop_using(gl);
 }
 
-// calculate new position/velocity of ball
-static void ball_update(State *state, float dt) {
-	Ball *ball = &state->ball;
-	float ball_r_squared = ball->radius * ball->radius;
-	float gravity = 0.001f;
-	v2 *vel = &ball->vel;
-	v2 acceleration = V2(0, -gravity);
-	// apply velocity to position
-	v2 ball_pos = v2_add(ball->pos, v2_scale(*vel, dt));
-	// correct position according to acceleration (p' = p + v⋅t + 1/2⋅a⋅t²)
-	ball_pos = v2_add(ball_pos, v2_scale(acceleration, 0.5f * dt * dt));
-	// apply acceleration to velocity
-	*vel = v2_add(*vel, acceleration);
-	for (Platform *platform = state->platforms, *end = platform + state->nplatforms;
-		platform != end; ++platform) {
-		v2 platform_center = platform->center;
-		float platform_size = platform->size;
-		float platform_angle = platform->angle;
-		v2 platform_length = v2_polar(platform_size, platform_angle);
-		platform_center = v2_sub(platform_center, ball_pos); // now the center of the ball is (0, 0)
-		v2 platform_pos = v2_sub(platform_center, v2_scale(platform_length, 0.5f));
 
-		// do some math to figure out if the ball & platform intersect
-		float dot = v2_dot(platform_length, platform_pos);
-		float len_squared = v2_dot(platform_length, platform_length);
-		float pos_squared = v2_dot(platform_pos, platform_pos);
-		float discriminant = dot * dot - len_squared * (pos_squared - ball_r_squared);
-		if (discriminant < 0) {
-			// full line (not segment) defined by platform doesn't even intersect ball, let alone the platform proper
-		} else {
-			float one_over_len_squared = 1.0f / len_squared;
-			float d1 = (-dot - sqrtf(discriminant)) * one_over_len_squared;
-			float d2 = (-dot + sqrtf(discriminant)) * one_over_len_squared;
-			// points platform_pos + d1 * platform_len and
-			//        platform_pos + d2 * platform_len
-			// are where the platform intersects the circle.
-			// if either is between 0 and 1, then the intersection actually happens on the platform
-			if ((d1 >= 0 && d1 <= 1) || (d2 >= 0 && d2 <= 1)) {
-				// platform intersects ball
-				float d = (d1 >= 0 && d1 <= 1) ? d1 : d2;
-				v2 collide_pos = v2_add(platform_pos, v2_scale(platform_length, d));
+static b2Body *platform_to_body(State *state, Platform *platform) {
+	b2World *world = state->world;
 
-				// calculate new velocity after collision
-				float vel_angle = -atan2f(vel->y, vel->x);
-				float vel_angle_relative_to_platform = vel_angle - platform->angle;
-				float new_angle = vel_angle + (PIf - 2 * vel_angle_relative_to_platform);
-				*vel = v2_polar(v2_len(*vel), new_angle);
-				ball_pos = v2_add(ball->pos, v2_scale(*vel, dt));
-				break;
-			}
-		}
+	float half_size = platform->size * 0.5f * B2_SCALE;
+	v2 center = v2_scale(platform->center, B2_SCALE);
 
-	}
-	ball->pos = ball_pos;
+	b2BodyDef body_def;
+	body_def.position.Set(center.x, center.y);
+	b2Body *body = world->CreateBody(&body_def);
+
+	b2PolygonShape shape;
+	shape.SetAsBox(half_size, state->platform_thickness, b2Vec2(0, 0), platform->angle);
+	body->CreateFixture(&shape, 0.0f);
+	return body;
 }
 
 #ifdef _WIN32
@@ -286,6 +267,7 @@ void sim_frame(Frame *frame) {
 		return;
 	}
 	State *state = (State *)frame->memory;
+	Ball *ball = &state->ball;
 	i32 width = frame->width, height = frame->height;
 	Input *input = &frame->input;
 	GL *gl = &state->gl;
@@ -356,25 +338,53 @@ void sim_frame(Frame *frame) {
 
 		shaders_load(state);
 		
+		state->platform_thickness = 0.005f;
 
 		{ // initialize platforms
 			state->nplatforms = 2;
 			Platform *p = &state->platforms[0];
 			p->center = V2(0.5f, 0.5f);
-			p->angle  = PIf * 0.3f;
-			p->size   = 0.2f;
+			p->angle  = PIf * 0.46f;
+			p->size   = 0.3f;
 			++p;
 			p->center = V2(0.4f, 0.5f);
-			p->angle  = PIf * 0.7f;
-			p->size   = 0.2f;
+			p->angle  = PIf * 0.54f;
+			p->size   = 0.3f;
 		}
 
-		Ball *ball = &state->ball;
-		ball->radius = 0.002f;
+		ball->radius = 0.02f;
 		ball->pos = V2(0.5f, 0.8f);
-		ball->vel = V2(0, 0);
 
+		b2Vec2 gravity(0, -30.0f);
+		b2World *world = state->world = new b2World(gravity);
+
+		b2BodyDef ground_body_def;
+		ground_body_def.position.Set(0.0f, -10.0f);
+		b2Body *ground_body = world->CreateBody(&ground_body_def);
+
+		b2PolygonShape ground_shape;
+		ground_shape.SetAsBox(50.0f, 10.0f);
+		ground_body->CreateFixture(&ground_shape, 0.0f);
+
+		b2BodyDef ball_def;
+		ball_def.type = b2_dynamicBody;
+		ball_def.position.Set(ball->pos.x * B2_SCALE, ball->pos.y * B2_SCALE);
+		b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
 		
+		b2CircleShape ball_shape;
+		ball_shape.m_radius = ball->radius * B2_SCALE;
+
+		b2FixtureDef ball_fixture;
+		ball_fixture.shape = &ball_shape;
+		ball_fixture.density = 1.0f;
+		ball_fixture.friction = 0.3f;
+		ball_fixture.restitution = 0.9f; // bounciness
+
+		ball_body->CreateFixture(&ball_fixture);
+		
+		for (u32 i = 0; i < state->nplatforms; ++i)
+			platform_to_body(state, &state->platforms[i]);
+			
 		state->initialized = true;
 	#if DEBUG
 		state->magic_number = MAGIC_NUMBER;
@@ -389,19 +399,20 @@ void sim_frame(Frame *frame) {
 	shaders_reload_if_necessary(state);
 #endif
 
+	b2World *world = state->world;
+
 	// simulate physics
 	{
+		float time_step = 0.01f; // fixed time step
 		float dt = state->dt;
-		float physics_step = 0.01f; // maximum dt for each physics step
-		if (dt > 100)
-			dt = 100; // make sure that dt -= physics_step actually does something (if dt is very large, it might not)
-		// do a number of fixed dt steps
-		while (dt > physics_step) {
-			ball_update(state, physics_step);
-			dt -= physics_step;
+		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
+		while (dt >= time_step) {
+			world->Step(time_step, 8, 3); // step using recommended parameters
+			dt -= time_step;
 		}
-		// update for remaining time
-		ball_update(state, dt);
+		b2Vec2 ball_pos = ball->body->GetPosition();
+		ball->pos.x = ball_pos.x * B2_INV_SCALE;
+		ball->pos.y = ball_pos.y * B2_INV_SCALE;
 	}
 
 	platforms_render(state, state->platforms, state->nplatforms);

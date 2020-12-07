@@ -1,13 +1,13 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
-#include "gui.h"
+#include "gui.hpp"
 #if DEBUG
 typedef void (*SimFrameFn)(Frame *);
 #else
-#include "sim.c"
+#include "sim.cpp"
 #endif
-#include "time.c"
+#include "time.cpp"
 
 #ifdef _WIN32
 #include <SDL.h>
@@ -168,15 +168,15 @@ static SDL_Scancode key_to_scancode(Key key, bool *shift) {
 	case KEY_0: return SDL_SCANCODE_0; // SDL_SCANCODE_0 != SDL_SCANCODE_1 - 1 
 	default:
 		if (key >= KEY_A && key <= KEY_Z) {
-			return SDL_SCANCODE_A + (key - KEY_A);
+			return (SDL_Scancode)(SDL_SCANCODE_A + (key - KEY_A));
 		} else if (key >= KEY_1 && key <= KEY_9) {
-			return SDL_SCANCODE_1 + (key - KEY_1);
+			return (SDL_Scancode)(SDL_SCANCODE_1 + (key - KEY_1));
 		} else if (key >= KEY_F1 && key <= KEY_F12) {
-			return SDL_SCANCODE_F1 + (key - KEY_F1);
+			return (SDL_Scancode)(SDL_SCANCODE_F1 + (key - KEY_F1));
 		}
 		break;
 	}
-	return 0;
+	return (SDL_Scancode)0;
 }
 
 #ifdef _WIN32
@@ -193,10 +193,10 @@ int WinMain(
 #else
 int main(void) {
 #endif
-	Frame frame = {0};
+	Frame frame = {};
 	Input *input = &frame.input;
 #if DEBUG
-	struct timespec dynlib_last_modified = {0};
+	struct timespec dynlib_last_modified = {};
 	SimFrameFn sim_frame = NULL;
 	#if __unix__
 	void *dynlib = NULL;
@@ -220,7 +220,7 @@ int main(void) {
 
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-	SDL_GLContext *glctx = SDL_GL_CreateContext(window);
+	SDL_GLContext glctx = SDL_GL_CreateContext(window);
 	if (!glctx) {
 		die("%s", SDL_GetError());
 	}
