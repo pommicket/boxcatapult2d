@@ -22,7 +22,7 @@
 // compile a vertex or fragment shader
 static GLuint shader_compile_from_file(GL *gl, char const *filename, GLenum shader_type) {
 	FILE *fp = fopen(filename, "rb");
-	if (filename) {
+	if (fp) {
 		char code[16384] = {0};
 		char log[4096] = {0};
 		char const *const_code = code;
@@ -41,6 +41,7 @@ static GLuint shader_compile_from_file(GL *gl, char const *filename, GLenum shad
 		}
 		return shader;
 	} else {
+		logln("File does not exist: %s.", filename);
 		return 0;
 	}
 }
@@ -124,16 +125,26 @@ static bool shader_needs_reloading(ShaderBase *shader) {
 #endif
 
 static void shader_platform_load(GL *gl, ShaderPlatform *shader) {
-	shader_load(gl, &shader->base, "assets/platform_v.glsl", "assets/platform_f.glsl");
-	shader->vertex_p1 = shader_attrib_location(gl, &shader->base, "vertex_p1");
-	shader->vertex_p2 = shader_attrib_location(gl, &shader->base, "vertex_p2");
-	shader->uniform_thickness = shader_uniform_location(gl, &shader->base, "thickness");
-	// @TODO: transform matrix
+	ShaderBase *base = &shader->base;
+	shader_load(gl, base, "assets/platform_v.glsl", "assets/platform_f.glsl");
+	shader->vertex_p1 = shader_attrib_location(gl, base, "vertex_p1");
+	shader->vertex_p2 = shader_attrib_location(gl, base, "vertex_p2");
+	shader->uniform_thickness = shader_uniform_location(gl, base, "thickness");
+	shader->uniform_transform = shader_uniform_location(gl, base, "transform");
+}
+
+static void shader_ball_load(GL *gl, ShaderBall *shader) {
+	ShaderBase *base = &shader->base;
+	shader_load(gl, base, "assets/ball_v.glsl", "assets/ball_f.glsl");
+	shader->uniform_transform = shader_uniform_location(gl, base, "transform");
+	shader->uniform_center = shader_uniform_location(gl, base, "center");
+	shader->uniform_radius = shader_uniform_location(gl, base, "radius");
 }
 
 static void shaders_load(State *state) {
 	GL *gl = &state->gl;
 	shader_platform_load(gl, &state->shader_platform);
+	shader_ball_load(gl, &state->shader_ball);
 }
 
 #if DEBUG
@@ -141,18 +152,24 @@ static void shaders_reload_if_necessary(State *state) {
 	GL *gl = &state->gl;
 	if (shader_needs_reloading(&state->shader_platform.base))
 		shader_platform_load(gl, &state->shader_platform);
+	if (shader_needs_reloading(&state->shader_ball.base))
+		shader_ball_load(gl, &state->shader_ball);
 }
 #endif
 
-
+// render the given platforms
 static void platforms_render(State *state, Platform *platforms, u32 nplatforms) {
 	GL *gl = &state->gl;
 	ShaderPlatform *shader = &state->shader_platform;
-	glColor3f(1,0,1);
-	float thickness = 0.01f;
+	float thickness = 0.005f;
+
 	shader_start_using(gl, &shader->base);
+	
 	gl->Uniform1f(shader->uniform_thickness, thickness);
+	gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, state->transform.e);
+
 	glBegin(GL_QUADS);
+	glColor3f(1,0,1);
 	for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
 		// calculate endpoints of platform
 		maybe_unused float radius = platform->size * 0.5f;
@@ -172,6 +189,29 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 		v2_gl_vertex(endpoint2);
 	#endif
 	}
+	glEnd();
+	shader_stop_using(gl);
+}
+
+// render the ball
+static void ball_render(State *state) {
+	GL *gl = &state->gl;
+	float ball_x = 0.5f, ball_y = 0.8f;
+	float ball_r = 0.02f;
+	ShaderBall *shader = &state->shader_ball;
+	
+	shader_start_using(gl, &shader->base);
+	
+	gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, state->transform.e);
+	gl->Uniform2f(shader->uniform_center, ball_x, ball_y);
+	gl->Uniform1f(shader->uniform_radius, ball_r);
+
+	glBegin(GL_QUADS);
+	glColor3f(1,1,1);
+	glVertex2f(ball_x-ball_r, ball_y-ball_r);
+	glVertex2f(ball_x-ball_r, ball_y+ball_r);
+	glVertex2f(ball_x+ball_r, ball_y+ball_r);
+	glVertex2f(ball_x+ball_r, ball_y-ball_r);
 	glEnd();
 	shader_stop_using(gl);
 }
@@ -197,16 +237,24 @@ void sim_frame(Frame *frame) {
 
 	state->win_width  = width;
 	state->win_height = height;
+	state->gl_width = (float)width / (float)height;
+	state->dt = (float)frame->dt;
 	
+	state->transform = m4_ortho(0, state->gl_width, 0, 1, -1, +1);
+
 	// set up GL
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glViewport(0, 0, width, height);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	//glOrtho(, -1, +1);
+	glOrtho(0, state->gl_width, 0, 1, -1, +1);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
+	
+	if (keys_pressed[KEY_F5]) {
+		memset(state, 0, sizeof *state);
+	}
 
 
 	if (!state->initialized) {
@@ -252,11 +300,16 @@ void sim_frame(Frame *frame) {
 		shaders_load(state);
 		
 
-		state->nplatforms = 1;
+		state->nplatforms = 2;
 		Platform *p = &state->platforms[0];
 		p->center = V2(0.5f, 0.5f);
-		p->angle  = 0;//PIf * 0.3f;
+		p->angle  = PIf * 0.3f;
 		p->size   = 0.2f;
+		++p;
+		p->center = V2(0.2f, 0.5f);
+		p->angle  = PIf * 0.6f;
+		p->size   = 0.1f;
+
 		
 		state->initialized = true;
 	#if DEBUG
@@ -273,6 +326,7 @@ void sim_frame(Frame *frame) {
 #endif
 
 	platforms_render(state, state->platforms, state->nplatforms);
+	ball_render(state);
 
 	#if DEBUG
 	GLuint error = glGetError();

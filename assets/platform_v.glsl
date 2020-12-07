@@ -4,9 +4,10 @@ varying vec4 color;
 varying vec2 p1, p2;
 varying vec2 pos;
 uniform float thickness;
+uniform mat4 transform;
 
 void main() {
-	gl_Position = gl_Vertex;
+	gl_Position = transform * gl_Vertex;
 	pos = gl_Vertex.xy;
 	color = gl_Color;
 #if 1

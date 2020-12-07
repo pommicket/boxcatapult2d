@@ -90,11 +90,18 @@ typedef struct {
 typedef GLuint VertexAttributeLocation;
 typedef GLint UniformLocation;
 
+// shader for platforms
 typedef struct {
 	ShaderBase base;
-	VertexAttributeLocation vertex_p1, vertex_p2;
-	UniformLocation uniform_thickness;
+	VertexAttributeLocation vertex_p1, vertex_p2; // endpoints of platform
+	UniformLocation uniform_thickness; // this is half the "width" of the platform
+	UniformLocation uniform_transform; // 4x4 matrix position is multiplied by
 } ShaderPlatform;
+
+typedef struct {	
+	ShaderBase base;
+	UniformLocation uniform_transform, uniform_center, uniform_radius;
+} ShaderBall;
 
 typedef struct {
 	v2 center;
@@ -104,10 +111,16 @@ typedef struct {
 
 typedef struct {
 	bool initialized;
+
 	i32 win_width, win_height; // width,height of window
+	float gl_width; // width of window in GL coordinates; height is always 1
+
+	float dt; // time in seconds since last frame
+	m4 transform; // the transform for converting our coordinates to GL coordinates
 
 	GL gl; // gl functions
 	ShaderPlatform shader_platform;
+	ShaderBall shader_ball;
 
 	u32 nplatforms;
 	Platform platforms[1000];
