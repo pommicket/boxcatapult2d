@@ -110,6 +110,12 @@ typedef struct {
 } Platform;
 
 typedef struct {
+	v2 pos; // position
+	v2 vel; // velocity
+	float radius;
+} Ball;
+
+typedef struct {
 	bool initialized;
 
 	i32 win_width, win_height; // width,height of window
@@ -121,6 +127,8 @@ typedef struct {
 	GL gl; // gl functions
 	ShaderPlatform shader_platform;
 	ShaderBall shader_ball;
+
+	Ball ball;
 
 	u32 nplatforms;
 	Platform platforms[1000];

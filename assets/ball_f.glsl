@@ -5,7 +5,7 @@ uniform float radius;
 
 void main() {
 	float dist_squared = dot(pos - center, pos - center);
-	float threshold = 0.9 * radius; // radius border starts at
+	float threshold = 0.8 * radius; // radius border starts at
 	float thickness = radius - threshold;
 
 	if (dist_squared > threshold * threshold && dist_squared < radius * radius) {

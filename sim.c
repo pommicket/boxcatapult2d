@@ -196,8 +196,9 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 // render the ball
 static void ball_render(State *state) {
 	GL *gl = &state->gl;
-	float ball_x = 0.5f, ball_y = 0.8f;
-	float ball_r = 0.02f;
+	Ball *ball = &state->ball;
+	float ball_x = ball->pos.x, ball_y = ball->pos.y;
+	float ball_r = ball->radius;
 	ShaderBall *shader = &state->shader_ball;
 	
 	shader_start_using(gl, &shader->base);
@@ -214,6 +215,62 @@ static void ball_render(State *state) {
 	glVertex2f(ball_x+ball_r, ball_y-ball_r);
 	glEnd();
 	shader_stop_using(gl);
+}
+
+// calculate new position/velocity of ball
+static void ball_update(State *state, float dt) {
+	Ball *ball = &state->ball;
+	float ball_r_squared = ball->radius * ball->radius;
+	float gravity = 0.001f;
+	v2 *vel = &ball->vel;
+	v2 acceleration = V2(0, -gravity);
+	// apply velocity to position
+	v2 ball_pos = v2_add(ball->pos, v2_scale(*vel, dt));
+	// correct position according to acceleration (p' = p + v⋅t + 1/2⋅a⋅t²)
+	ball_pos = v2_add(ball_pos, v2_scale(acceleration, 0.5f * dt * dt));
+	// apply acceleration to velocity
+	*vel = v2_add(*vel, acceleration);
+	for (Platform *platform = state->platforms, *end = platform + state->nplatforms;
+		platform != end; ++platform) {
+		v2 platform_center = platform->center;
+		float platform_size = platform->size;
+		float platform_angle = platform->angle;
+		v2 platform_length = v2_polar(platform_size, platform_angle);
+		platform_center = v2_sub(platform_center, ball_pos); // now the center of the ball is (0, 0)
+		v2 platform_pos = v2_sub(platform_center, v2_scale(platform_length, 0.5f));
+
+		// do some math to figure out if the ball & platform intersect
+		float dot = v2_dot(platform_length, platform_pos);
+		float len_squared = v2_dot(platform_length, platform_length);
+		float pos_squared = v2_dot(platform_pos, platform_pos);
+		float discriminant = dot * dot - len_squared * (pos_squared - ball_r_squared);
+		if (discriminant < 0) {
+			// full line (not segment) defined by platform doesn't even intersect ball, let alone the platform proper
+		} else {
+			float one_over_len_squared = 1.0f / len_squared;
+			float d1 = (-dot - sqrtf(discriminant)) * one_over_len_squared;
+			float d2 = (-dot + sqrtf(discriminant)) * one_over_len_squared;
+			// points platform_pos + d1 * platform_len and
+			//        platform_pos + d2 * platform_len
+			// are where the platform intersects the circle.
+			// if either is between 0 and 1, then the intersection actually happens on the platform
+			if ((d1 >= 0 && d1 <= 1) || (d2 >= 0 && d2 <= 1)) {
+				// platform intersects ball
+				float d = (d1 >= 0 && d1 <= 1) ? d1 : d2;
+				v2 collide_pos = v2_add(platform_pos, v2_scale(platform_length, d));
+
+				// calculate new velocity after collision
+				float vel_angle = -atan2f(vel->y, vel->x);
+				float vel_angle_relative_to_platform = vel_angle - platform->angle;
+				float new_angle = vel_angle + (PIf - 2 * vel_angle_relative_to_platform);
+				*vel = v2_polar(v2_len(*vel), new_angle);
+				ball_pos = v2_add(ball->pos, v2_scale(*vel, dt));
+				break;
+			}
+		}
+
+	}
+	ball->pos = ball_pos;
 }
 
 #ifdef _WIN32
@@ -252,7 +309,7 @@ void sim_frame(Frame *frame) {
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
-	if (keys_pressed[KEY_F5]) {
+	if (state->magic_number != MAGIC_NUMBER || keys_pressed[KEY_F5]) {
 		memset(state, 0, sizeof *state);
 	}
 
@@ -300,15 +357,22 @@ void sim_frame(Frame *frame) {
 		shaders_load(state);
 		
 
-		state->nplatforms = 2;
-		Platform *p = &state->platforms[0];
-		p->center = V2(0.5f, 0.5f);
-		p->angle  = PIf * 0.3f;
-		p->size   = 0.2f;
-		++p;
-		p->center = V2(0.2f, 0.5f);
-		p->angle  = PIf * 0.6f;
-		p->size   = 0.1f;
+		{ // initialize platforms
+			state->nplatforms = 2;
+			Platform *p = &state->platforms[0];
+			p->center = V2(0.5f, 0.5f);
+			p->angle  = PIf * 0.3f;
+			p->size   = 0.2f;
+			++p;
+			p->center = V2(0.4f, 0.5f);
+			p->angle  = PIf * 0.7f;
+			p->size   = 0.2f;
+		}
+
+		Ball *ball = &state->ball;
+		ball->radius = 0.002f;
+		ball->pos = V2(0.5f, 0.8f);
+		ball->vel = V2(0, 0);
 
 		
 		state->initialized = true;
@@ -324,6 +388,21 @@ void sim_frame(Frame *frame) {
 #if DEBUG
 	shaders_reload_if_necessary(state);
 #endif
+
+	// simulate physics
+	{
+		float dt = state->dt;
+		float physics_step = 0.01f; // maximum dt for each physics step
+		if (dt > 100)
+			dt = 100; // make sure that dt -= physics_step actually does something (if dt is very large, it might not)
+		// do a number of fixed dt steps
+		while (dt > physics_step) {
+			ball_update(state, physics_step);
+			dt -= physics_step;
+		}
+		// update for remaining time
+		ball_update(state, dt);
+	}
 
 	platforms_render(state, state->platforms, state->nplatforms);
 	ball_render(state);
