@@ -15,6 +15,7 @@ static u8 *tmp_alloc(State *state, size_t bytes) {
 		return NULL;
 	}
 	if (used + max_aligns_needed > arr_count(state->tmp_mem)) {
+		printf("%zu\n",bytes);
 		assert(0);
 		return NULL;
 	}

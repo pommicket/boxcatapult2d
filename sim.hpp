@@ -1,8 +1,18 @@
+#ifndef SIM_H_
+#define SIM_H_
+
 #if _WIN32
 #include <box2d.h>
 #else
 #include <Box2D/Box2D.h>
 #endif
+
+#define STBTT_STATIC
+#define STB_TRUETYPE_IMPLEMENTATION
+no_warn_start
+#include "lib/stb_truetype.h"
+no_warn_end
+
 // enums with a specified width are a clang C extension & available in C++11
 #if defined __clang__ || __cplusplus >= 201103L
 #define ENUM_U8 typedef enum : u8 
@@ -84,6 +94,13 @@ typedef struct {
 } GL;
 
 typedef struct {
+	float char_height;
+	GLuint texture;
+	int tex_width, tex_height;
+	stbtt_bakedchar char_data[96];
+} Font;
+
+typedef struct {
 	GLuint program;
 #if DEBUG
 	char vertex_filename[32];
@@ -137,6 +154,9 @@ typedef struct {
 	b2World *world;
 
 	Ball ball;
+	float bottom_y; // if y goes below here, it's over
+
+	Font font;
 
 	float platform_thickness;
 	u32 nplatforms;
@@ -151,3 +171,4 @@ typedef struct {
 #endif
 } State;
 
+#endif // SIM_H_

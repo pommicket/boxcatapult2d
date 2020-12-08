@@ -9,46 +9,7 @@
 #define NDEBUG 1
 #endif
 
-#include <stdbool.h>
-#include <stdint.h>
-#include <stddef.h>
-
-#if __STDC_VERSION__ >= 201112
-#include <stdalign.h>
-typedef max_align_t MaxAlign;
-#else
-typedef union {
-	long
-#if __STDC_VERSION__ >= 199901 || _MSC_VER
-	long
-#endif
-	a;
-	long double b;
-	void *c;
-	void (*d)(void);
-} MaxAlign;
-#endif
-
-typedef unsigned long ulong;
-typedef unsigned uint;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-#define U8_MAX  0xff
-#define U16_MAX 0xffff
-#define U32_MAX 0xffffffff
-#define U64_MAX 0xffffffffffffffff
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-#define I8_MAX  0x7f
-#define I16_MAX 0x7fff
-#define I32_MAX 0x7fffffff
-#define I64_Max 0x7fffffffffffffff
+#include "types.hpp"
 
 enum {
 	KEY_UNKNOWN,

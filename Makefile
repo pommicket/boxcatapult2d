@@ -1,10 +1,12 @@
 WARNINGS=-Wall -Wextra -Wshadow -Wconversion -Wpedantic -pedantic -std=gnu++11 -Wno-unused-function -Wno-fixed-enum-extension -Wimplicit-fallthrough
 LIBS=-ldl `pkg-config --libs --cflags box2d sdl2 gl`
 DEBUG_CFLAGS=$(CFLAGS) $(WARNINGS) $(LIBS) -DDEBUG -O0 -g
-obj/debug: physics obj/sim.so
+obj/debug: physics obj/sim.so obj
 	touch obj/debug
 physics: main.cpp gui.hpp sim.cpp time.cpp
 	$(CXX) main.cpp -o $@ $(DEBUG_CFLAGS)
-obj/sim.so: *.[ch]*
+obj/sim.so: *.[ch]* obj
 	$(CXX) sim.cpp -fPIC -shared -o $@ $(DEBUG_CFLAGS)
 	touch obj/sim.so_changed
+obj:
+	mkdir -p obj

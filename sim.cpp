@@ -18,6 +18,7 @@
 #include "time.cpp"
 #include "util.cpp"
 #include "base.cpp"
+#include "text.cpp"
 
 // how much to scale up objects for Box2D
 #define B2_SCALE 30
@@ -283,7 +284,6 @@ void sim_frame(Frame *frame) {
 	state->gl_width = (float)width / (float)height;
 	state->dt = (float)frame->dt;
 	
-	state->transform = m4_ortho(0, state->gl_width, 0, 1, -1, +1);
 
 	// set up GL
 	glEnable(GL_BLEND);
@@ -291,7 +291,6 @@ void sim_frame(Frame *frame) {
 	glViewport(0, 0, width, height);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	glOrtho(0, state->gl_width, 0, 1, -1, +1);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
@@ -344,15 +343,17 @@ void sim_frame(Frame *frame) {
 		shaders_load(state);
 		
 		state->platform_thickness = 0.005f;
+		state->bottom_y = 0.1f;
 
+		text_font_load(state, &state->font, "assets/font.ttf", 48.0f);
 
 		ball->radius = 0.02f;
 		ball->pos = V2(0.5f, 0.8f);
 
 		b2Vec2 gravity(0, -30.0f);
 		b2World *world = state->world = new b2World(gravity);
-
-		
+			
+		// create ground
 		b2BodyDef ground_body_def;
 		ground_body_def.position.Set(0.0f, -1000.0f);
 		b2Body *ground_body = world->CreateBody(&ground_body_def);
@@ -361,6 +362,7 @@ void sim_frame(Frame *frame) {
 		ground_shape.SetAsBox(50.0f, 10.0f);
 		ground_body->CreateFixture(&ground_shape, 0.0f);
 
+		// create ball
 		b2BodyDef ball_def;
 		ball_def.type = b2_dynamicBody;
 		ball_def.position.Set(ball->pos.x * B2_SCALE, ball->pos.y * B2_SCALE);
@@ -416,9 +418,18 @@ void sim_frame(Frame *frame) {
 			world->Step(time_step, 8, 3); // step using recommended parameters
 			dt -= time_step;
 		}
-		b2Vec2 ball_pos = ball->body->GetPosition();
-		ball->pos.x = ball_pos.x * B2_INV_SCALE;
-		ball->pos.y = ball_pos.y * B2_INV_SCALE;
+		if (ball->body) {
+			b2Vec2 ball_pos = ball->body->GetPosition();
+			ball->pos.x = ball_pos.x * B2_INV_SCALE;
+			ball->pos.y = ball_pos.y * B2_INV_SCALE;
+
+			if (ball->pos.y - ball->radius < state->bottom_y) {
+				// oh no! ball reached bottom line
+				printf("Score: %f m\n", ball_pos.x);
+				world->DestroyBody(ball->body);
+				ball->body = NULL;
+			}
+		}
 		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
 			b2Vec2 platform_pos = platform->body->GetPosition();
 			platform->center.x = platform_pos.x * B2_INV_SCALE;
@@ -427,8 +438,27 @@ void sim_frame(Frame *frame) {
 		}
 	}
 
+	{
+		float half_width = state->gl_width * 0.5f, half_height = 0.5f;
+		float ball_x = ball->pos.x, ball_y = ball->pos.y;
+		// center view around ball
+		state->transform = m4_ortho(ball_x - half_width, ball_x + half_width, ball_y - half_height, ball_y + half_height, -1, +1);
+	}
+
 	platforms_render(state, state->platforms, state->nplatforms);
-	ball_render(state);
+	if (ball->body) ball_render(state);
+
+	{
+		v3 line_pos = V3(0, state->bottom_y, 0);
+		line_pos = m4_mul_v3(state->transform, line_pos);
+		glBegin(GL_LINES);
+		glColor3f(1,0,0);
+		glVertex2f(-1, line_pos.y);
+		glVertex2f(+1, line_pos.y);
+		glEnd();
+	}
+
+	text_render2f(state, &state->font, "Hello", 0, 0);
 
 	#if DEBUG
 	GLuint error = glGetError();
