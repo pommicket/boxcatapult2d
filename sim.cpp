@@ -245,12 +245,14 @@ static b2Body *platform_to_body(State *state, Platform *platform) {
 	v2 center = v2_scale(platform->center, B2_SCALE);
 
 	b2BodyDef body_def;
+	body_def.type = b2_kinematicBody;
 	body_def.position.Set(center.x, center.y);
 	b2Body *body = world->CreateBody(&body_def);
 
 	b2PolygonShape shape;
 	shape.SetAsBox(half_size, state->platform_thickness, b2Vec2(0, 0), platform->angle);
 	body->CreateFixture(&shape, 0.0f);
+	body->SetLinearVelocity(b2Vec2(0, 10.0f));
 	return body;
 }
 
@@ -340,17 +342,6 @@ void sim_frame(Frame *frame) {
 		
 		state->platform_thickness = 0.005f;
 
-		{ // initialize platforms
-			state->nplatforms = 2;
-			Platform *p = &state->platforms[0];
-			p->center = V2(0.5f, 0.5f);
-			p->angle  = PIf * 0.46f;
-			p->size   = 0.3f;
-			++p;
-			p->center = V2(0.4f, 0.5f);
-			p->angle  = PIf * 0.54f;
-			p->size   = 0.3f;
-		}
 
 		ball->radius = 0.02f;
 		ball->pos = V2(0.5f, 0.8f);
@@ -358,8 +349,9 @@ void sim_frame(Frame *frame) {
 		b2Vec2 gravity(0, -30.0f);
 		b2World *world = state->world = new b2World(gravity);
 
+		
 		b2BodyDef ground_body_def;
-		ground_body_def.position.Set(0.0f, -10.0f);
+		ground_body_def.position.Set(0.0f, -1000.0f);
 		b2Body *ground_body = world->CreateBody(&ground_body_def);
 
 		b2PolygonShape ground_shape;
@@ -382,9 +374,20 @@ void sim_frame(Frame *frame) {
 
 		ball_body->CreateFixture(&ball_fixture);
 		
-		for (u32 i = 0; i < state->nplatforms; ++i)
-			platform_to_body(state, &state->platforms[i]);
-			
+		{ // initialize platforms
+			state->nplatforms = 2;
+			Platform *p = &state->platforms[0];
+			p->center = V2(0.5f, 0.5f);
+			p->angle  = PIf * 0.46f;
+			p->size   = 0.3f;
+			p->body = platform_to_body(state, p);
+			++p;
+			p->center = V2(0.4f, 0.5f);
+			p->angle  = PIf * 0.54f;
+			p->size   = 0.3f;
+			p->body = platform_to_body(state, p);
+		}
+
 		state->initialized = true;
 	#if DEBUG
 		state->magic_number = MAGIC_NUMBER;
@@ -413,6 +416,11 @@ void sim_frame(Frame *frame) {
 		b2Vec2 ball_pos = ball->body->GetPosition();
 		ball->pos.x = ball_pos.x * B2_INV_SCALE;
 		ball->pos.y = ball_pos.y * B2_INV_SCALE;
+		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
+			b2Vec2 platform_pos = platform->body->GetPosition();
+			platform->center.x = platform_pos.x * B2_INV_SCALE;
+			platform->center.y = platform_pos.y * B2_INV_SCALE;
+		}
 	}
 
 	platforms_render(state, state->platforms, state->nplatforms);

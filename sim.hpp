@@ -1,4 +1,4 @@
-#include <Box2D.h>
+#include <Box2D/Box2D.h>
 // enums with a specified width are a clang C extension & available in C++11
 #if defined __clang__ || __cplusplus >= 201103L
 #define ENUM_U8 typedef enum : u8 
@@ -105,6 +105,7 @@ typedef struct {
 } ShaderBall;
 
 typedef struct {
+	b2Body *body;
 	v2 center;
 	float size;
 	float angle;
