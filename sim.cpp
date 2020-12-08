@@ -345,7 +345,7 @@ void sim_frame(Frame *frame) {
 		state->platform_thickness = 0.005f;
 		state->bottom_y = 0.1f;
 
-		text_font_load(state, &state->font, "assets/font.ttf", 48.0f);
+		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
 
 		ball->radius = 0.02f;
 		ball->pos = V2(0.5f, 0.8f);
@@ -408,6 +408,7 @@ void sim_frame(Frame *frame) {
 #endif
 
 	b2World *world = state->world;
+	Font *font = &state->font;
 
 	// simulate physics
 	{
@@ -425,9 +426,10 @@ void sim_frame(Frame *frame) {
 
 			if (ball->pos.y - ball->radius < state->bottom_y) {
 				// oh no! ball reached bottom line
-				printf("Score: %f m\n", ball_pos.x);
 				world->DestroyBody(ball->body);
 				ball->body = NULL;
+			} else {
+				state->distance_traveled = ball_pos.x;
 			}
 		}
 		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
@@ -456,9 +458,22 @@ void sim_frame(Frame *frame) {
 		glVertex2f(-1, line_pos.y);
 		glVertex2f(+1, line_pos.y);
 		glEnd();
+		glBegin(GL_QUADS);
+		glColor4f(1,0,0,0.1f);
+		glVertex2f(-1, line_pos.y);
+		glVertex2f(-1, -1);
+		glVertex2f(+1, -1);
+		glVertex2f(+1, line_pos.y);
+		glEnd();
 	}
 
-	text_render2f(state, &state->font, "Hello", 0, 0);
+	{
+		char text[256] = {0};
+		glColor3f(0.8f,0.5f,1);
+		snprintf(text, sizeof text - 1, "Distance: %.2f m", state->distance_traveled);
+		v2 size = text_get_size(state, font, text);
+		text_render(state, font, text, v2_sub(V2(0.95f, 0.95f), size));
+	}
 
 	#if DEBUG
 	GLuint error = glGetError();

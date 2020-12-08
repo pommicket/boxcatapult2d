@@ -156,6 +156,8 @@ typedef struct {
 	Ball ball;
 	float bottom_y; // if y goes below here, it's over
 
+	float distance_traveled;
+
 	Font font;
 
 	float platform_thickness;
