@@ -247,12 +247,14 @@ static b2Body *platform_to_body(State *state, Platform *platform) {
 	b2BodyDef body_def;
 	body_def.type = b2_kinematicBody;
 	body_def.position.Set(center.x, center.y);
+	body_def.angle = platform->angle;
 	b2Body *body = world->CreateBody(&body_def);
 
 	b2PolygonShape shape;
-	shape.SetAsBox(half_size, state->platform_thickness, b2Vec2(0, 0), platform->angle);
+	shape.SetAsBox(half_size, state->platform_thickness);
 	body->CreateFixture(&shape, 0.0f);
-	body->SetLinearVelocity(b2Vec2(0, 10.0f));
+	body->SetLinearVelocity(b2Vec2(0, 3.0f));
+	body->SetAngularVelocity(2.0f);
 	return body;
 }
 
@@ -420,6 +422,7 @@ void sim_frame(Frame *frame) {
 			b2Vec2 platform_pos = platform->body->GetPosition();
 			platform->center.x = platform_pos.x * B2_INV_SCALE;
 			platform->center.y = platform_pos.y * B2_INV_SCALE;
+			platform->angle = platform->body->GetAngle();
 		}
 	}
 
