@@ -20,12 +20,12 @@
 #include "base.cpp"
 #include "text.cpp"
 
-// how much to scale up objects for Box2D
-#define B2_SCALE 30
-#define B2_INV_SCALE (1.0f / B2_SCALE)
-
 static b2Vec2 v2_to_b2(v2 v) {
 	return b2Vec2(v.x, v.y);
+}
+
+static v2 b2_to_v2(b2Vec2 v) {
+	return V2(v.x, v.y);
 }
 
 // compile a vertex or fragment shader
@@ -166,21 +166,6 @@ static void shaders_reload_if_necessary(State *state) {
 }
 #endif
 
-// get endpoints and bounding box of platform
-static void platform_get_coords(State *state, Platform *platform, v2 coords[6]) {
-	float radius = platform->size * 0.5f;
-	v2 thickness_r = v2_polar(state->platform_thickness, platform->angle - HALF_PIf);
-	v2 platform_r = v2_polar(radius, platform->angle);
-	v2 endpoint1 = v2_add(platform->center, platform_r);
-	v2 endpoint2 = v2_sub(platform->center, platform_r);
-	coords[0] = endpoint1;
-	coords[1] = endpoint2;
-	coords[2] = v2_sub(endpoint1, thickness_r);
-	coords[3] = v2_sub(endpoint2, thickness_r);
-	coords[4] = v2_add(endpoint2, thickness_r);
-	coords[5] = v2_add(endpoint1, thickness_r);
-}
-
 // render the given platforms
 static void platforms_render(State *state, Platform *platforms, u32 nplatforms) {
 	GL *gl = &state->gl;
@@ -195,16 +180,20 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	glBegin(GL_QUADS);
 	glColor3f(1,0,1);
 	for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
-		v2 coords[6];
-		platform_get_coords(state, platform, coords);
+		float radius = platform->size * 0.5f;
+		v2 center = platform->center;
+		v2 thickness_r = v2_polar(state->platform_thickness, platform->angle - HALF_PIf);
+		v2 platform_r = v2_polar(radius, platform->angle);
+		v2 endpoint1 = v2_add(center, platform_r);
+		v2 endpoint2 = v2_sub(center, platform_r);
 
 	#if 1
-		gl->VertexAttrib2f(shader->vertex_p1, coords[0].x, coords[0].y);
-		gl->VertexAttrib2f(shader->vertex_p2, coords[1].x, coords[1].y);
-		v2_gl_vertex(coords[2]);
-		v2_gl_vertex(coords[3]);
-		v2_gl_vertex(coords[4]);
-		v2_gl_vertex(coords[5]);
+		gl->VertexAttrib2f(shader->vertex_p1, endpoint1.x, endpoint1.y);
+		gl->VertexAttrib2f(shader->vertex_p2, endpoint2.x, endpoint2.y);
+		v2_gl_vertex(v2_sub(endpoint1, thickness_r));
+		v2_gl_vertex(v2_sub(endpoint2, thickness_r));
+		v2_gl_vertex(v2_add(endpoint2, thickness_r));
+		v2_gl_vertex(v2_add(endpoint1, thickness_r));
 	#else
 		v2_gl_vertex(endpoint1);
 		v2_gl_vertex(endpoint2);
@@ -242,8 +231,8 @@ static void ball_render(State *state) {
 static b2Body *platform_to_body(State *state, Platform *platform) {
 	b2World *world = state->world;
 
-	float half_size = platform->size * 0.5f * B2_SCALE;
-	v2 center = v2_scale(platform->center, B2_SCALE);
+	float half_size = platform->size * 0.5f;
+	v2 center = platform->center;
 
 	b2BodyDef body_def;
 	body_def.type = b2_kinematicBody;
@@ -281,7 +270,6 @@ void sim_frame(Frame *frame) {
 
 	state->win_width  = width;
 	state->win_height = height;
-	state->gl_width = (float)width / (float)height;
 	state->dt = (float)frame->dt;
 	
 
@@ -342,13 +330,13 @@ void sim_frame(Frame *frame) {
 
 		shaders_load(state);
 		
-		state->platform_thickness = 0.005f;
+		state->platform_thickness = 0.15f;
 		state->bottom_y = 0.1f;
 
 		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
 
-		ball->radius = 0.02f;
-		ball->pos = V2(0.5f, 0.8f);
+		ball->radius = 0.6f;
+		ball->pos = V2(0, 10.0f);
 
 		b2Vec2 gravity(0, -30.0f);
 		b2World *world = state->world = new b2World(gravity);
@@ -365,11 +353,11 @@ void sim_frame(Frame *frame) {
 		// create ball
 		b2BodyDef ball_def;
 		ball_def.type = b2_dynamicBody;
-		ball_def.position.Set(ball->pos.x * B2_SCALE, ball->pos.y * B2_SCALE);
+		ball_def.position.Set(ball->pos.x, ball->pos.y);
 		b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
 		
 		b2CircleShape ball_shape;
-		ball_shape.m_radius = ball->radius * B2_SCALE;
+		ball_shape.m_radius = ball->radius;
 
 		b2FixtureDef ball_fixture;
 		ball_fixture.shape = &ball_shape;
@@ -382,14 +370,14 @@ void sim_frame(Frame *frame) {
 		{ // initialize platforms
 			state->nplatforms = 2;
 			Platform *p = &state->platforms[0];
-			p->center = V2(0.5f, 0.5f);
+			p->center = V2(0, 0.5f);
 			p->angle  = PIf * 0.46f;
-			p->size   = 0.3f;
+			p->size   = 9.0f;
 			p->body = platform_to_body(state, p);
 			++p;
-			p->center = V2(0.4f, 0.5f);
+			p->center = V2(0, 0.5f);
 			p->angle  = PIf * 0.54f;
-			p->size   = 0.3f;
+			p->size   = 6.0f;
 			p->body = platform_to_body(state, p);
 		}
 
@@ -421,10 +409,10 @@ void sim_frame(Frame *frame) {
 		}
 		if (ball->body) {
 			b2Vec2 ball_pos = ball->body->GetPosition();
-			ball->pos.x = ball_pos.x * B2_INV_SCALE;
-			ball->pos.y = ball_pos.y * B2_INV_SCALE;
+			ball->pos.x = ball_pos.x;
+			ball->pos.y = ball_pos.y;
 
-			if (ball->pos.y - ball->radius < state->bottom_y) {
+			if (ball_pos.y - ball->radius < state->bottom_y) {
 				// oh no! ball reached bottom line
 				world->DestroyBody(ball->body);
 				ball->body = NULL;
@@ -434,14 +422,14 @@ void sim_frame(Frame *frame) {
 		}
 		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
 			b2Vec2 platform_pos = platform->body->GetPosition();
-			platform->center.x = platform_pos.x * B2_INV_SCALE;
-			platform->center.y = platform_pos.y * B2_INV_SCALE;
+			platform->center = b2_to_v2(platform_pos);
 			platform->angle = platform->body->GetAngle();
 		}
 	}
 
 	{
-		float half_width = state->gl_width * 0.5f, half_height = 0.5f;
+		float half_height = 10.0f;
+		float half_width = half_height * (float)state->win_width / (float)state->win_height;
 		float ball_x = ball->pos.x, ball_y = ball->pos.y;
 		// center view around ball
 		state->transform = m4_ortho(ball_x - half_width, ball_x + half_width, ball_y - half_height, ball_y + half_height, -1, +1);

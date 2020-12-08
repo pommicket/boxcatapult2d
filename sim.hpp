@@ -142,7 +142,6 @@ typedef struct {
 	bool initialized;
 
 	i32 win_width, win_height; // width,height of window
-	float gl_width; // width of window in GL coordinates; height is always 1
 
 	float dt; // time in seconds since last frame
 	m4 transform; // the transform for converting our coordinates to GL coordinates
