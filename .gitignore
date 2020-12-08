@@ -10,5 +10,7 @@ TAGS
 *.exe
 *.dll
 *.xcf
+*.lib
 SDL2
+box2d
 .vs*

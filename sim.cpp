@@ -258,11 +258,11 @@ static b2Body *platform_to_body(State *state, Platform *platform) {
 	return body;
 }
 
-#ifdef _WIN32
-__declspec(dllexport)
-#endif
 #ifdef __cplusplus
 extern "C"
+#endif
+#ifdef _WIN32
+__declspec(dllexport)
 #endif
 void sim_frame(Frame *frame) {
 	if (frame->memory_size < sizeof(State)) {
@@ -295,10 +295,11 @@ void sim_frame(Frame *frame) {
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
+#if DEBUG
 	if (state->magic_number != MAGIC_NUMBER || keys_pressed[KEY_F5]) {
 		memset(state, 0, sizeof *state);
 	}
-
+#endif
 
 	if (!state->initialized) {
 		logln("Initializing...");

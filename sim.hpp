@@ -1,4 +1,8 @@
+#if _WIN32
+#include <box2d.h>
+#else
 #include <Box2D/Box2D.h>
+#endif
 // enums with a specified width are a clang C extension & available in C++11
 #if defined __clang__ || __cplusplus >= 201103L
 #define ENUM_U8 typedef enum : u8 

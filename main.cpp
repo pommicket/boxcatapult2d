@@ -4,10 +4,10 @@
 #include "gui.hpp"
 #if DEBUG
 typedef void (*SimFrameFn)(Frame *);
+#include "time.cpp"
 #else
 #include "sim.cpp"
 #endif
-#include "time.cpp"
 
 #ifdef _WIN32
 #include <SDL.h>
