@@ -685,9 +685,13 @@ void sim_frame(Frame *frame) {
 
 		if (keys_pressed[KEY_R]) {
 			// toggle rotating platform
-			platform_building->rotates = !platform_building->rotates;
-			if (platform_building->rotate_speed == 0) {
-				platform_building->rotate_speed = 1;
+			bool rotates = platform_building->rotates = !platform_building->rotates;
+			if (rotates) {
+				if (platform_building->rotate_speed == 0) {
+					platform_building->rotate_speed = 1;
+				}
+			} else {
+				platform_building->rotate_speed = 0;
 			}
 		}
 

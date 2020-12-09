@@ -139,7 +139,7 @@ typedef struct {
 	v2 move_p1;
 	v2 move_p2;
 
-	float rotate_speed;
+	float rotate_speed; // rotation speed. if this isn't a rotating platform, this should be 0
 
 	u32 color;
 } Platform;
