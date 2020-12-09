@@ -4,7 +4,7 @@
 #if _WIN32
 #include <box2d.h>
 #else
-#include <Box2D/Box2D.h>
+#include <box2d/box2d.h>
 #endif
 
 #define STBTT_STATIC
@@ -150,6 +150,13 @@ typedef struct {
 	b2Body *body;
 } Ball;
 
+#define USER_DATA_TYPE_SHIFT 12
+#define USER_DATA_TYPE (((uintptr_t)-1) << USER_DATA_TYPE_SHIFT)
+#define USER_DATA_INDEX (~USER_DATA_TYPE)
+#define USER_DATA_TYPE_PLATFORM ((uintptr_t)0x1)
+// indicator that this Box2D fixture is a platform
+#define USER_DATA_PLATFORM (USER_DATA_TYPE_PLATFORM << USER_DATA_TYPE_SHIFT)
+
 typedef struct {
 	bool initialized;
 
@@ -185,7 +192,8 @@ typedef struct {
 
 	float platform_thickness;
 	u32 nplatforms;
-	Platform platforms[1000];
+#define MAX_PLATFORMS 1000
+	Platform platforms[MAX_PLATFORMS];
 
 	u32 tmp_mem_used; // this is not measured in bytes, but in MaxAligns 
 #define TMP_MEM_BYTES (4L<<20)

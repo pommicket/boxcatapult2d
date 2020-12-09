@@ -1,5 +1,5 @@
-WARNINGS=-Wall -Wextra -Wshadow -Wconversion -Wpedantic -pedantic -std=gnu++11 -Wno-unused-function -Wno-fixed-enum-extension -Wimplicit-fallthrough
-LIBS=-ldl `pkg-config --libs --cflags box2d sdl2 gl`
+WARNINGS=-Wall -Wextra -Wshadow -Wconversion -Wpedantic -pedantic -std=gnu++11 -Wno-unused-function -Wimplicit-fallthrough
+LIBS=-ldl `pkg-config --libs --cflags sdl2 gl` -l:libbox2d.a
 DEBUG_CFLAGS=$(CFLAGS) $(WARNINGS) $(LIBS) -DDEBUG -O0 -g
 obj/debug: physics obj/sim.so obj
 	touch obj/debug

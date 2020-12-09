@@ -267,6 +267,35 @@ int main(void) {
 				Key key = keycode_to_key(event.key.keysym.sym);
 				++input->keys_released[key];
 			} break;
+			case SDL_MOUSEBUTTONDOWN:
+			case SDL_MOUSEBUTTONUP: {
+				int x = event.button.x, y = event.button.y;
+				u8 button = 0;
+				switch (event.button.button) {
+				case SDL_BUTTON_LEFT:
+					button = MOUSE_LEFT;
+					break;
+				case SDL_BUTTON_MIDDLE:
+					button = MOUSE_MIDDLE;
+					break;
+				case SDL_BUTTON_RIGHT:
+					button = MOUSE_RIGHT;
+					break;
+				}
+				MousePress *press = NULL;
+				if (event.type == SDL_MOUSEBUTTONDOWN) {
+					if (input->nmouse_presses < MAX_MOUSE_PRESSES_PER_FRAME)
+						press = &input->mouse_presses[input->nmouse_presses++];
+				} else {
+					if (input->nmouse_releases < MAX_MOUSE_RELEASES_PER_FRAME)
+						press = &input->mouse_releases[input->nmouse_releases++];
+				}
+				if (press) {
+					press->button = button;
+					press->x = x;
+					press->y = y;
+				}
+			} break;
 			case SDL_QUIT:
 				input->closed = true;
 				break;

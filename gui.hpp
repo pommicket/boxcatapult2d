@@ -33,9 +33,10 @@ enum {
 };
 typedef u16 Key;
 
-#define MOUSE_LEFT 0
-#define MOUSE_MIDDLE 1
-#define MOUSE_RIGHT 2
+#define MOUSE_OTHER 0
+#define MOUSE_LEFT 1
+#define MOUSE_MIDDLE 2
+#define MOUSE_RIGHT 3
 
 typedef struct {
 	u8 button;
@@ -51,6 +52,9 @@ typedef struct {
 	u16 nmouse_presses;
 #define MAX_MOUSE_PRESSES_PER_FRAME 256
 	MousePress mouse_presses[MAX_MOUSE_PRESSES_PER_FRAME];
+	u16 nmouse_releases;
+#define MAX_MOUSE_RELEASES_PER_FRAME MAX_MOUSE_PRESSES_PER_FRAME 
+	MousePress mouse_releases[MAX_MOUSE_RELEASES_PER_FRAME];
 
 	i32 mouse_x, mouse_y; // (+y = down)
 	bool shift, ctrl;

@@ -229,6 +229,18 @@ static void ball_render(State *state) {
 	shader_stop_using(gl);
 }
 
+static uintptr_t platform_to_user_data(State *state, Platform *platform) {
+	return USER_DATA_PLATFORM | (uintptr_t)(platform - state->platforms);
+}
+
+static Platform *platform_from_user_data(State *state, uintptr_t user_data) {
+	if ((user_data & USER_DATA_TYPE) == USER_DATA_PLATFORM) {
+		uintptr_t index = user_data & USER_DATA_INDEX;
+		return &state->platforms[index];
+	} else {
+		return NULL;
+	}
+}
 
 // sets platform->body to a new Box2D body.
 static void platform_make_body(State *state, Platform *platform) {
@@ -253,6 +265,7 @@ static void platform_make_body(State *state, Platform *platform) {
 	b2FixtureDef fixture;
 	fixture.shape = &shape;
 	fixture.friction = 0.8f;
+	fixture.userData.pointer = platform_to_user_data(state, platform);
 
 	body->CreateFixture(&fixture);
 	if (platform->moves) {
@@ -265,6 +278,32 @@ static void platform_make_body(State *state, Platform *platform) {
 	body->SetAngularVelocity(platform->rotate_speed);
 
 	platform->body = body;
+}
+
+class PlatformQueryCallback : public b2QueryCallback {
+public:
+	PlatformQueryCallback(State *state_) {
+		this->state = state_;
+	}
+	bool ReportFixture(b2Fixture *fixture) {
+		platform = platform_from_user_data(state, fixture->GetUserData().pointer);
+		return !platform; // if we haven't found a platform, keep going
+	}
+	Platform *platform = NULL;
+	State *state = NULL;
+};
+
+static Platform *platform_at_mouse_pos(State *state) {
+	v2 mouse_pos = state->mouse_pos;
+	v2 mouse_radius = V2(0.3f, 0.3f); // you don't have to hover exactly over a platform to select it. this is the tolerance.
+	v2 a = v2_sub(mouse_pos, mouse_radius);
+	v2 b = v2_add(mouse_pos, mouse_radius);
+	PlatformQueryCallback callback(state);
+	b2AABB aabb;
+	aabb.lowerBound = v2_to_b2(a);
+	aabb.upperBound = v2_to_b2(b);
+	state->world->QueryAABB(&callback, aabb);
+	return callback.platform;
 }
 
 static void simulate_time(State *state, float dt) {
@@ -326,6 +365,25 @@ static void simulate_time(State *state, float dt) {
 		dt -= time_step;
 	}
 	state->time_residue = dt;
+}
+
+static void platform_delete(State *state, u32 index) {
+	Platform *platforms = state->platforms;
+	u32 nplatforms = state->nplatforms;
+	
+	state->world->DestroyBody(platforms[index].body);
+
+	if (index+1 < nplatforms) {
+		// set this platform to last platform
+		platforms[index] = platforms[nplatforms-1];
+		memset(&platforms[nplatforms-1], 0, sizeof(Platform));
+		platforms[index].body->GetFixtureList()->GetUserData().pointer = platform_to_user_data(state, &platforms[index]);
+	} else {
+		// platform is at end of array; don't need to do anything special
+		memset(&platforms[index], 0, sizeof(Platform));
+	}
+	--state->nplatforms;
+
 }
 
 #ifdef __cplusplus
@@ -506,6 +564,7 @@ void sim_frame(Frame *frame) {
 	}
 
 	Font *font = &state->font;
+	Platform *mouse_platform = platform_at_mouse_pos(state);
 
 	if (state->simulating) {
 		// simulate physics
@@ -534,12 +593,42 @@ void sim_frame(Frame *frame) {
 
 		platform_building->size = clampf(platform_building->size, 0.3f, 10.0f);
 		platform_building->angle = fmodf(platform_building->angle, TAUf);
+
+		for (u32 i = 0; i < input->nmouse_presses; ++i) {
+			if (input->mouse_presses[i].button == MOUSE_LEFT) {
+				if (mouse_platform) {
+					// click to delete platform
+					platform_delete(state, (u32)(mouse_platform - state->platforms));
+				} else {
+					// left-click to build platform
+					if (state->nplatforms < MAX_PLATFORMS) {
+						Platform *p = &state->platforms[state->nplatforms++];
+						*p = *platform_building;
+						p->color |= 0xFF; // set alpha to 255
+						platform_make_body(state, p);
+					}
+				}
+			}
+		}
+
+		if (keys_pressed[KEY_SPACE]) {
+			state->building = false;
+			state->simulating = true;
+		}
 	}
 
 
+	u32 prev_mouse_platform_color = mouse_platform ? mouse_platform->color : 0;
+	if (state->building) {
+		// turn platform under mouse red (if user clicks, it will be deleted)
+		if (mouse_platform) mouse_platform->color = 0xFF0000FF;
+	}
 	platforms_render(state, state->platforms, state->nplatforms);
 	if (state->building) {
-		platforms_render(state, &state->platform_building, 1);
+		if (mouse_platform)
+			mouse_platform->color = prev_mouse_platform_color;
+		else
+			platforms_render(state, &state->platform_building, 1);
 	}
 	ball_render(state);
 
