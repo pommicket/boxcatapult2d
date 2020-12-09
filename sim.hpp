@@ -167,7 +167,8 @@ typedef struct {
 	b2World *world;
 
 	Ball ball;
-	float bottom_y; // if y goes below here, it's over
+	float bottom_y; // y-position of "floor" (if y goes below here, it's over)
+	float left_x; // y-position of left wall
 
 	Font font;
 

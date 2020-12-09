@@ -287,6 +287,40 @@ static void simulate_time(State *state, float dt) {
 			}
 		}
 
+		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
+			platform->angle = platform->body->GetAngle();
+			v2 pos = b2_to_v2(platform->body->GetPosition());
+			platform->center = pos;
+
+			if (platform->moves) {
+				// check if the platform has reached the other endpoint; if so, set it going in the other direction
+				v2 p1 = platform->move_p1, p2 = platform->move_p2;
+				v2 vel = b2_to_v2(platform->body->GetLinearVelocity());
+				bool switch_direction = false;
+
+				if (vel.x > 0) {
+					if (pos.x > maxf(p1.x, p2.x))
+						switch_direction = true;
+				} else if (vel.x < 0) {
+					if (pos.x < minf(p1.x, p2.x))
+						switch_direction = true;
+				}
+				if (vel.y > 0) {
+					if (pos.y > maxf(p1.y, p2.y))
+						switch_direction = true;
+				} else if (vel.y < 0) {
+					if (pos.y < minf(p1.y, p2.y))
+						switch_direction = true;
+				}
+
+				if (switch_direction) {
+					v2 new_vel = v2_scale(vel, -1); // flip the velocity
+					platform->body->SetLinearVelocity(v2_to_b2(new_vel));
+				}
+				
+			}
+		}
+
 		dt -= time_step;
 	}
 	state->time_residue = dt;
@@ -376,6 +410,7 @@ void sim_frame(Frame *frame) {
 		
 		state->platform_thickness = 0.05f;
 		state->bottom_y = 0.1f;
+		state->left_x   = -3.0f;
 
 		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
 
@@ -394,6 +429,14 @@ void sim_frame(Frame *frame) {
 		ground_shape.SetAsBox(50.0f, 10.0f);
 		ground_body->CreateFixture(&ground_shape, 0.0f);
 
+		// create left wall
+		b2BodyDef left_wall_def;
+		left_wall_def.position.Set(state->left_x - 0.5f, 0);
+		b2Body *left_wall_body = world->CreateBody(&left_wall_def);
+		b2PolygonShape left_wall_shape;
+		left_wall_shape.SetAsBox(0.5f, 1000);
+		left_wall_body->CreateFixture(&left_wall_shape, 0);
+
 		// create ball
 		b2BodyDef ball_def;
 		ball_def.type = b2_dynamicBody;
@@ -407,26 +450,26 @@ void sim_frame(Frame *frame) {
 		ball_fixture.shape = &ball_shape;
 		ball_fixture.density = 1.0f;
 		ball_fixture.friction = 0.3f;
-		ball_fixture.restitution = 0.9f; // bounciness
+		ball_fixture.restitution = 0.3f; // bounciness
 
 		ball_body->CreateFixture(&ball_fixture);
 		
 		{ // initialize platforms
-			state->nplatforms = 2;
 			Platform *p = &state->platforms[0];
-			p->center = V2(0, 0.8f);
+			p->center = V2(-1.0f, 5.0f);
 			p->angle  = 0;
-			p->size   = 9.0f;
-			p->rotate_speed = 1.0f;
+			p->size   = 1.0f;
+			//p->rotate_speed = -1.0f;
 			platform_make_body(state, p);
 			++p;
 			p->moves = true;
-			p->move_p1 = V2(0, 0.5f);
-			p->move_p2 = V2(0, 5.5f);
+			p->move_p1 = V2(2.0f, 0.5f);
+			p->move_p2 = V2(-2.0f, 1.5f);
 			p->move_speed = 1.0f;
-			p->angle  = PIf * 0.54f;
+			p->angle  = 0.05f;
 			p->size   = 6.0f;
 			platform_make_body(state, p);
+			state->nplatforms = (u32)(p - state->platforms + 1);
 		}
 
 		state->initialized = true;
@@ -451,11 +494,6 @@ void sim_frame(Frame *frame) {
 		float dt = state->dt;
 		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
 		simulate_time(state, dt);
-		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
-			b2Vec2 platform_pos = platform->body->GetPosition();
-			platform->center = b2_to_v2(platform_pos);
-			platform->angle = platform->body->GetAngle();
-		}
 	}
 
 	{
@@ -470,20 +508,36 @@ void sim_frame(Frame *frame) {
 	ball_render(state);
 
 	{
-		v3 line_pos = V3(0, state->bottom_y, 0);
-		line_pos = m4_mul_v3(state->transform, line_pos);
+		float bottom_y = m4_mul_v3(state->transform, V3(0, state->bottom_y, 0)).y;
+		float left_x = m4_mul_v3(state->transform, V3(state->left_x, 0, 0)).x;
+
 		glBegin(GL_LINES);
 		glColor3f(1,0,0);
-		glVertex2f(-1, line_pos.y);
-		glVertex2f(+1, line_pos.y);
+		// render floor line
+		glVertex2f(-1, bottom_y);
+		glVertex2f(+1, bottom_y);
+
+		// render left wall line
+		glColor3f(0.5f,0.5f,0.5f);
+		glVertex2f(left_x, bottom_y);
+		glVertex2f(left_x, +1);
 		glEnd();
+
 		glBegin(GL_QUADS);
-		glColor4f(1,0,0,0.1f);
-		glVertex2f(-1, line_pos.y);
+		// floor area
+		glColor4f(1,0,0,0.2f);
+		glVertex2f(-1, bottom_y);
 		glVertex2f(-1, -1);
 		glVertex2f(+1, -1);
-		glVertex2f(+1, line_pos.y);
+		glVertex2f(+1, bottom_y);
+		// left wall area
+		glColor4f(0.5f, 0.5f, 0.5f, 0.2f);
+		glVertex2f(-1, +1);
+		glVertex2f(left_x, +1);
+		glVertex2f(left_x, bottom_y);
+		glVertex2f(-1, bottom_y);
 		glEnd();
+
 	}
 
 	{
