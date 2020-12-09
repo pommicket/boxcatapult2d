@@ -247,7 +247,12 @@ static void platform_make_body(State *state, Platform *platform) {
 
 	b2PolygonShape shape;
 	shape.SetAsBox(half_size, state->platform_thickness);
-	body->CreateFixture(&shape, 0.0f);
+
+	b2FixtureDef fixture;
+	fixture.shape = &shape;
+	fixture.friction = 0.8f;
+
+	body->CreateFixture(&fixture);
 	if (platform->moves) {
 		float speed = platform->move_speed;
 		v2 p1 = platform->move_p1, p2 = platform->move_p2;
