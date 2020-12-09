@@ -130,7 +130,6 @@ typedef struct {
 
 	// save the starting position and rotation of the platform so we
 	// can restore it to reset the setup
-	v2 start_center;
 	float start_angle;
 
 	v2 center;
@@ -185,6 +184,7 @@ typedef struct {
 	ShaderBall shader_ball;
 
 	bool building; // is the user building a setup?
+	bool setting_move_p2; // is the user setting the move_p2 of the platform they're placing?
 	bool simulating; // are we simulating the world's physics?
 
 	b2World *world; // Box2D world

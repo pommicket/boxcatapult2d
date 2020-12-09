@@ -155,6 +155,15 @@ static v2 v2_lerp(float x, v2 a, v2 b) {
 	return V2(lerpf(x, a.x, b.x), lerpf(x, a.y, b.y));
 }
 
+// rotate v theta radians counterclockwise
+static v2 v2_rotate(v2 v, float theta) {
+	float c = cosf(theta), s = sinf(theta);
+	return V2(
+		c * v.x - s * v.y,
+		s * v.x + c * v.y
+	);
+}
+
 static v2 v2_normalize(v2 v) {
 	float len = v2_len(v);
 	float mul = len == 0.0f ? 1.0f : 1.0f/len;

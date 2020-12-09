@@ -166,12 +166,17 @@ static void shaders_reload_if_necessary(State *state) {
 }
 #endif
 
+// converts Box2D coordinates to GL coordinates
+static v2 b2_to_gl(State const *state, v2 box2d_coordinates) {
+	v3 v = m4_mul_v3(state->transform, v3_from_v2(box2d_coordinates));
+	return V2(v.x, v.y);
+}
+
 // render the given platforms
 static void platforms_render(State *state, Platform *platforms, u32 nplatforms) {
 	GL *gl = &state->gl;
 	ShaderPlatform *shader = &state->shader_platform;
 	float platform_render_thickness = state->platform_thickness;
-	m4 transform = state->transform;
 
 	shader_start_using(gl, &shader->base);
 	
@@ -208,39 +213,70 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 
 	if (state->building) {
 		// show arrows for platforms
+		glBegin(GL_LINES);
 		for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
 			gl_rgbacolor(platform->color);
 			if (platform->rotates) {
 				float speed = platform->rotate_speed;
 				float angle = speed * 0.5f;
 				if (angle) {
+					// draw arc-shaped arrow to show rotation
 					float theta1 = HALF_PIf;
 					float theta2 = theta1 + angle;
 					float dtheta = 0.03f * sgnf(angle);
 					float radius = platform->size;
-					glBegin(GL_LINE_STRIP);
+					v2 last_point;
 					for (float theta = theta1; angle > 0 ? (theta < theta2) : (theta > theta2); theta += dtheta) {
-						v3 point = v3_from_v2(v2_add(platform->center, v2_polar(radius, theta)));
-						point = m4_mul_v3(transform, point);
-						v3_gl_vertex(point);
+						v2 point = b2_to_gl(state, v2_add(platform->center, v2_polar(radius, theta)));
+						if (theta != theta1) {
+							v2_gl_vertex(last_point);
+							v2_gl_vertex(point);
+						}
+						last_point = point;
 					}
-					glEnd();
 
-					v3 p1 = v3_from_v2(v2_add(platform->center, v2_polar(radius-0.2f, theta2-0.1f * sgnf(angle))));
-					v3 p2 = v3_from_v2(v2_add(platform->center, v2_polar(radius, theta2)));
-					v3 p3 = v3_from_v2(v2_add(platform->center, v2_polar(radius+0.2f, theta2-0.1f * sgnf(angle))));
+					v2 p1 = b2_to_gl(state, v2_add(platform->center, v2_polar(radius-0.2f, theta2-0.1f * sgnf(angle))));
+					v2 p2 = b2_to_gl(state, v2_add(platform->center, v2_polar(radius, theta2)));
+					v2 p3 = b2_to_gl(state, v2_add(platform->center, v2_polar(radius+0.2f, theta2-0.1f * sgnf(angle))));
 
-					p1 = m4_mul_v3(transform, p1);
-					p2 = m4_mul_v3(transform, p2);
-					p3 = m4_mul_v3(transform, p3);
-					glBegin(GL_LINE_STRIP);
-					v3_gl_vertex(p1);
-					v3_gl_vertex(p2);
-					v3_gl_vertex(p3);
-					glEnd();
+					v2_gl_vertex(p1); v2_gl_vertex(p2);
+					v2_gl_vertex(p2); v2_gl_vertex(p3);
 				}
 			}
+
+			if (platform->moves) {
+				// draw double-headed arrow to show back & forth motion
+				v2 p1 = platform->move_p1;
+				v2 p2 = platform->move_p2;
+				v2 p2_to_p1 = v2_scale(v2_normalize(v2_sub(p1, p2)), platform->move_speed * 0.5f);
+				v2 p1_to_p2 = v2_scale(p2_to_p1, -1);
+				v2 arrowhead_a1 = v2_add(p1, v2_rotate(p1_to_p2, +0.5f));
+				v2 arrowhead_b1 = v2_add(p1, v2_rotate(p1_to_p2, -0.5f));
+				v2 arrowhead_a2 = v2_add(p2, v2_rotate(p2_to_p1, +0.5f));
+				v2 arrowhead_b2 = v2_add(p2, v2_rotate(p2_to_p1, -0.5f));
+				
+				v2 p1_gl = b2_to_gl(state, p1);
+				v2 p2_gl = b2_to_gl(state, p2);
+				v2 aa1_gl = b2_to_gl(state, arrowhead_a1);
+				v2 ab1_gl = b2_to_gl(state, arrowhead_b1);
+				v2 aa2_gl = b2_to_gl(state, arrowhead_a2);
+				v2 ab2_gl = b2_to_gl(state, arrowhead_b2);
+
+				v2_gl_vertex(p1_gl);
+				v2_gl_vertex(p2_gl);
+
+				v2_gl_vertex(aa1_gl);
+				v2_gl_vertex(p1_gl);
+				v2_gl_vertex(p1_gl);
+				v2_gl_vertex(ab1_gl);
+
+				v2_gl_vertex(aa2_gl);
+				v2_gl_vertex(p2_gl);
+				v2_gl_vertex(p2_gl);
+				v2_gl_vertex(ab2_gl);
+			}
 		}
+		glEnd();
 	}
 }
 
@@ -467,10 +503,11 @@ static void setup_reset(State *state) {
 		ball_body->CreateFixture(&ball_fixture);
 	}
 	for (Platform *p = state->platforms, *end = p + state->nplatforms; p != end; ++p) { // reset platforms
-		p->center = p->start_center;
 		p->angle = p->start_angle;
+		if (p->moves) p->center = p->move_p1;
 		p->body->SetTransform(v2_to_b2(p->center), p->angle);
 	}
+	state->setting_move_p2 = false;
 }
 
 #ifdef __cplusplus
@@ -595,9 +632,9 @@ void sim_frame(Frame *frame) {
 		
 		{ // initialize platforms
 			Platform *p = &state->platforms[0];
-			p->start_center = V2(-1.0f, 5.0f);
 			p->start_angle  = 0;
 			p->size   = 1.0f;
+			p->center = V2(1.5f, 1.5f);
 			p->color = 0xFF00FFFF;
 			platform_make_body(state, p);
 			state->nplatforms = (u32)(p - state->platforms + 1);
@@ -662,7 +699,35 @@ void sim_frame(Frame *frame) {
 
 	if (state->building) {
 		Platform *platform_building = &state->platform_building;
-		platform_building->center = state->mouse_pos;
+
+		if (keys_pressed[KEY_R]) {
+			// toggle rotating platform
+			bool rotates = platform_building->rotates = !platform_building->rotates;
+			if (rotates) {
+				if (platform_building->rotate_speed == 0) {
+					platform_building->rotate_speed = 1;
+				}
+			} else {
+				platform_building->rotate_speed = 0;
+			}
+		}
+
+		if (keys_pressed[KEY_M]) {
+			// toggle moving platform
+			bool moves = platform_building->moves = !platform_building->moves;
+			if (moves) {
+				platform_building->move_p1 = platform_building->center;
+				platform_building->move_speed = 1.0f;
+				state->setting_move_p2 = true;
+			}
+		}
+
+		if (state->setting_move_p2) {
+			platform_building->move_p2 = state->mouse_pos;
+		} else {
+			platform_building->center = state->mouse_pos;
+			platform_building->move_p1 = platform_building->center;
+		}
 		float dt = state->dt;
 		float rotate_amount = 2.0f * dt;
 		float size_change_amount = 4.0f * dt;
@@ -689,25 +754,19 @@ void sim_frame(Frame *frame) {
 				platform_building->rotate_speed -= rotate_change_amount;
 		}
 
+		if (platform_building->moves) {
+			// change move speed
+			float speed_change_amount = 2.0f * dt;
+			if (keys_down[KEY_A])
+				platform_building->move_speed -= speed_change_amount;
+			if (keys_down[KEY_D])
+				platform_building->move_speed += speed_change_amount;
+		}
+
 		platform_building->rotate_speed = clampf(platform_building->rotate_speed, -3, +3);
+		platform_building->move_speed = clampf(platform_building->move_speed, 0.1f, 5.0f);
 		platform_building->size = clampf(platform_building->size, 0.3f, 10.0f);
 		platform_building->angle = fmodf(platform_building->angle, TAUf);
-
-		if (keys_pressed[KEY_R]) {
-			// toggle rotating platform
-			bool rotates = platform_building->rotates = !platform_building->rotates;
-			if (rotates) {
-				if (platform_building->rotate_speed == 0) {
-					platform_building->rotate_speed = 1;
-				}
-			} else {
-				platform_building->rotate_speed = 0;
-			}
-		}
-
-		if (keys_pressed[KEY_M]) {
-			// toggle moving platform
-		}
 
 		for (u32 i = 0; i < input->nmouse_presses; ++i) {
 			MousePress *press = &input->mouse_presses[i];
@@ -715,18 +774,20 @@ void sim_frame(Frame *frame) {
 
 			if (button == MOUSE_LEFT) {
 				if (mouse_platform) {
+					// edit platform
 					*platform_building = *mouse_platform;
 					platform_delete(state, mouse_platform);
 					platform_building->color = (platform_building->color & 0xFFFFFF00) | 0x7F;
 				} else {
 					// left-click to build platform
 					if (state->nplatforms < MAX_PLATFORMS) {
-						platform_building->start_center = platform_building->center;
 						platform_building->start_angle = platform_building->angle;
 						Platform *p = &state->platforms[state->nplatforms++];
 						*p = *platform_building;
 						p->color |= 0xFF; // set alpha to 255
 						platform_make_body(state, p);
+						state->setting_move_p2 = false;
+						platform_building->moves = false;
 					}
 				}
 			} else if (button == MOUSE_RIGHT) {
