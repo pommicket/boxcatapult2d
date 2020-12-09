@@ -33,11 +33,26 @@ enum {
 };
 typedef u16 Key;
 
+#define MOUSE_LEFT 0
+#define MOUSE_MIDDLE 1
+#define MOUSE_RIGHT 2
+
+typedef struct {
+	u8 button;
+	i32 x, y;
+} MousePress;
+typedef MousePress MouseRelease;
+
 typedef struct {
 	bool closed; // was the window closed?
 	u8 keys_pressed[NKEYS];  // [i] = how many times was key #i pressed  this frame?
 	u8 keys_released[NKEYS]; // [i] = how many times was key #i released this frame?
 	bool keys_down[NKEYS]; // [i] = is key #i down?
+	u16 nmouse_presses;
+#define MAX_MOUSE_PRESSES_PER_FRAME 256
+	MousePress mouse_presses[MAX_MOUSE_PRESSES_PER_FRAME];
+
+	i32 mouse_x, mouse_y; // (+y = down)
 	bool shift, ctrl;
 } Input;
 

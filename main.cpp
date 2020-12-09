@@ -388,6 +388,11 @@ int main(void) {
 			SDL_GetWindowSize(window, &w, &h);
 			frame.width = w;
 			frame.height = h;
+
+			int x = 0, y = 0;
+			SDL_GetMouseState(&x, &y);
+			input->mouse_x = x;
+			input->mouse_y = y;
 		}
 		
 		{

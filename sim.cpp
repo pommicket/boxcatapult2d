@@ -187,6 +187,8 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 		v2 endpoint1 = v2_add(center, platform_r);
 		v2 endpoint2 = v2_sub(center, platform_r);
 
+		gl_rgbacolor(platform->color);
+
 	#if 1
 		gl->VertexAttrib2f(shader->vertex_p1, endpoint1.x, endpoint1.y);
 		gl->VertexAttrib2f(shader->vertex_p2, endpoint2.x, endpoint2.y);
@@ -346,8 +348,8 @@ void sim_frame(Frame *frame) {
 	maybe_unused u8 *keys_pressed = input->keys_pressed;
 	maybe_unused bool *keys_down = input->keys_down;
 
-	state->win_width  = width;
-	state->win_height = height;
+	state->win_width  = (float)width;
+	state->win_height = (float)height;
 	state->dt = (float)frame->dt;
 	
 
@@ -459,25 +461,23 @@ void sim_frame(Frame *frame) {
 			p->center = V2(-1.0f, 5.0f);
 			p->angle  = 0;
 			p->size   = 1.0f;
-			//p->rotate_speed = -1.0f;
-			platform_make_body(state, p);
-			++p;
-			p->moves = true;
-			p->move_p1 = V2(2.0f, 0.5f);
-			p->move_p2 = V2(-2.0f, 1.5f);
-			p->move_speed = 1.0f;
-			p->angle  = 0.05f;
-			p->size   = 6.0f;
+			p->color = 0xFF00FFFF;
 			platform_make_body(state, p);
 			state->nplatforms = (u32)(p - state->platforms + 1);
-		}
 
+			Platform *b = &state->platform_building;
+			b->size = 3.0f;
+			b->color = 0xFF00FF7F;
+		}
+		
+		state->building = true;
+			
 		state->initialized = true;
 	#if DEBUG
 		state->magic_number = MAGIC_NUMBER;
 	#endif
 	}
-	if (input->keys_pressed[KEY_ESCAPE]) {
+	if (keys_pressed[KEY_ESCAPE]) {
 		frame->close = true;
 		return;
 	}
@@ -486,25 +486,61 @@ void sim_frame(Frame *frame) {
 	shaders_reload_if_necessary(state);
 #endif
 
-	maybe_unused b2World *world = state->world;
+	{
+		float half_height = 10.0f;
+		float half_width = half_height * state->win_width / state->win_height;
+		float ball_x = ball->pos.x, ball_y = ball->pos.y;
+		// center view around ball
+		state->transform = m4_ortho(ball_x - half_width, ball_x + half_width, ball_y - half_height, ball_y + half_height, -1, +1);
+		state->inv_transform = m4_inv(state->transform);
+	}
+
+	{ // calculate mouse position in Box2D coordinates
+		v3 mouse_gl_coords = V3(
+			(float)input->mouse_x / state->win_width * 2 - 1,
+			(1 - (float)input->mouse_y / state->win_height) * 2 - 1,
+			0
+		);
+
+		state->mouse_pos = v3_xy(m4_mul_v3(state->inv_transform, mouse_gl_coords));
+	}
+
 	Font *font = &state->font;
 
-	// simulate physics
-	{
+	if (state->simulating) {
+		// simulate physics
 		float dt = state->dt;
 		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
 		simulate_time(state, dt);
 	}
 
-	{
-		float half_height = 10.0f;
-		float half_width = half_height * (float)state->win_width / (float)state->win_height;
-		float ball_x = ball->pos.x, ball_y = ball->pos.y;
-		// center view around ball
-		state->transform = m4_ortho(ball_x - half_width, ball_x + half_width, ball_y - half_height, ball_y + half_height, -1, +1);
+	if (state->building) {
+		Platform *platform_building = &state->platform_building;
+		platform_building->center = state->mouse_pos;
+		float dt = state->dt;
+		float rotate_amount = 2.0f * dt;
+		float size_change_amount = 4.0f * dt;
+		// rotate platform using left/right
+		if (keys_down[KEY_LEFT])
+			platform_building->angle += rotate_amount;
+		if (keys_down[KEY_RIGHT])
+			platform_building->angle -= rotate_amount;
+		
+		// change size of platform using up/down
+		if (keys_down[KEY_UP])
+			platform_building->size += size_change_amount;
+		if (keys_down[KEY_DOWN])
+			platform_building->size -= size_change_amount;
+
+		platform_building->size = clampf(platform_building->size, 0.3f, 10.0f);
+		platform_building->angle = fmodf(platform_building->angle, TAUf);
 	}
 
+
 	platforms_render(state, state->platforms, state->nplatforms);
+	if (state->building) {
+		platforms_render(state, &state->platform_building, 1);
+	}
 	ball_render(state);
 
 	{

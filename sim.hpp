@@ -138,7 +138,10 @@ typedef struct {
 	v2 move_p1;
 	v2 move_p2;
 
+
 	float rotate_speed;
+
+	u32 color;
 } Platform;
 
 typedef struct {
@@ -150,7 +153,9 @@ typedef struct {
 typedef struct {
 	bool initialized;
 
-	i32 win_width, win_height; // width,height of window
+	float win_width, win_height; // width,height of window in pixels
+
+	v2 mouse_pos; // mouse position in Box2D (not GL) coordinates
 
 	float dt; // time in seconds since last frame
 
@@ -159,18 +164,24 @@ typedef struct {
 	// will be some left over, if the frame time is not a multiple of the fixed time step)
 	float time_residue; 
 	m4 transform; // the transform for converting our coordinates to GL coordinates
+	m4 inv_transform; // inverse of transform (for converting GL coordinates to our coordinates)
 
 	GL gl; // gl functions
 	ShaderPlatform shader_platform;
 	ShaderBall shader_ball;
 
-	b2World *world;
+	bool building; // is the user building a setup?
+	bool simulating; // are we simulating the world's physics?
+
+	b2World *world; // Box2D world
 
 	Ball ball;
 	float bottom_y; // y-position of "floor" (if y goes below here, it's over)
 	float left_x; // y-position of left wall
 
 	Font font;
+
+	Platform platform_building; // the platform the user is currently placing
 
 	float platform_thickness;
 	u32 nplatforms;
