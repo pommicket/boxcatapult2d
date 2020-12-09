@@ -127,7 +127,13 @@ typedef struct {
 
 typedef struct {
 	b2Body *body;
-	v2 center; // NOTE: when creating a moving platform, you don't need to set this (it will be automatically initialized to move_pos1)
+
+	// save the starting position and rotation of the platform so we
+	// can restore it to reset the setup
+	v2 start_center;
+	float start_angle;
+
+	v2 center;
 	float size;
 	float angle;
 

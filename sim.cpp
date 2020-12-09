@@ -334,7 +334,7 @@ public:
 
 static Platform *platform_at_mouse_pos(State *state) {
 	v2 mouse_pos = state->mouse_pos;
-	v2 mouse_radius = V2(0.3f, 0.3f); // you don't have to hover exactly over a platform to select it. this is the tolerance.
+	v2 mouse_radius = V2(0.1f, 0.1f); // you don't have to hover exactly over a platform to select it. this is the tolerance.
 	v2 a = v2_sub(mouse_pos, mouse_radius);
 	v2 b = v2_add(mouse_pos, mouse_radius);
 	PlatformQueryCallback callback(state);
@@ -438,32 +438,39 @@ static void correct_mouse_button(State *state, u8 *button) {
 	}
 }
 
-static void ball_reset(State *state) {
-	Ball *ball = &state->ball;
-	b2World *world = state->world;
-	if (ball->body)
-		world->DestroyBody(ball->body);
+static void setup_reset(State *state) {
+	{ // reset ball
+		Ball *ball = &state->ball;
+		b2World *world = state->world;
+		if (ball->body)
+			world->DestroyBody(ball->body);
 
 
-	ball->radius = 0.3f;
-	ball->pos = V2(0, 10.0f);
+		ball->radius = 0.3f;
+		ball->pos = V2(0, 10.0f);
 
-	// create ball
-	b2BodyDef ball_def;
-	ball_def.type = b2_dynamicBody;
-	ball_def.position.Set(ball->pos.x, ball->pos.y);
-	b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
-	
-	b2CircleShape ball_shape;
-	ball_shape.m_radius = ball->radius;
+		// create ball
+		b2BodyDef ball_def;
+		ball_def.type = b2_dynamicBody;
+		ball_def.position.Set(ball->pos.x, ball->pos.y);
+		b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
+		
+		b2CircleShape ball_shape;
+		ball_shape.m_radius = ball->radius;
 
-	b2FixtureDef ball_fixture;
-	ball_fixture.shape = &ball_shape;
-	ball_fixture.density = 1.0f;
-	ball_fixture.friction = 0.3f;
-	ball_fixture.restitution = 0.3f; // bounciness
+		b2FixtureDef ball_fixture;
+		ball_fixture.shape = &ball_shape;
+		ball_fixture.density = 1.0f;
+		ball_fixture.friction = 0.3f;
+		ball_fixture.restitution = 0.3f; // bounciness
 
-	ball_body->CreateFixture(&ball_fixture);
+		ball_body->CreateFixture(&ball_fixture);
+	}
+	for (Platform *p = state->platforms, *end = p + state->nplatforms; p != end; ++p) { // reset platforms
+		p->center = p->start_center;
+		p->angle = p->start_angle;
+		p->body->SetTransform(v2_to_b2(p->center), p->angle);
+	}
 }
 
 #ifdef __cplusplus
@@ -585,12 +592,11 @@ void sim_frame(Frame *frame) {
 		left_wall_shape.SetAsBox(0.5f, 1000);
 		left_wall_body->CreateFixture(&left_wall_shape, 0);
 
-		ball_reset(state);
 		
 		{ // initialize platforms
 			Platform *p = &state->platforms[0];
-			p->center = V2(-1.0f, 5.0f);
-			p->angle  = 0;
+			p->start_center = V2(-1.0f, 5.0f);
+			p->start_angle  = 0;
 			p->size   = 1.0f;
 			p->color = 0xFF00FFFF;
 			platform_make_body(state, p);
@@ -600,6 +606,8 @@ void sim_frame(Frame *frame) {
 			b->size = 3.0f;
 			b->color = 0xFF00FF7F;
 		}
+
+		setup_reset(state);
 		
 		state->building = true;
 			
@@ -648,7 +656,7 @@ void sim_frame(Frame *frame) {
 			state->building = true;
 			state->simulating = false;
 			keys_pressed[KEY_SPACE] = 0;
-			ball_reset(state);
+			setup_reset(state);
 		}
 	}
 
@@ -659,11 +667,13 @@ void sim_frame(Frame *frame) {
 		float rotate_amount = 2.0f * dt;
 		float size_change_amount = 4.0f * dt;
 		// rotate platform using left/right
-		if (keys_down[KEY_LEFT])
+		if (keys_down[KEY_LEFT]) {
 			platform_building->angle += rotate_amount;
-		if (keys_down[KEY_RIGHT])
+		}
+		if (keys_down[KEY_RIGHT]) {
 			platform_building->angle -= rotate_amount;
-		
+		}
+
 		// change size of platform using up/down
 		if (keys_down[KEY_UP])
 			platform_building->size += size_change_amount;
@@ -695,6 +705,10 @@ void sim_frame(Frame *frame) {
 			}
 		}
 
+		if (keys_pressed[KEY_M]) {
+			// toggle moving platform
+		}
+
 		for (u32 i = 0; i < input->nmouse_presses; ++i) {
 			MousePress *press = &input->mouse_presses[i];
 			u8 button = press->button;
@@ -707,6 +721,8 @@ void sim_frame(Frame *frame) {
 				} else {
 					// left-click to build platform
 					if (state->nplatforms < MAX_PLATFORMS) {
+						platform_building->start_center = platform_building->center;
+						platform_building->start_angle = platform_building->angle;
 						Platform *p = &state->platforms[state->nplatforms++];
 						*p = *platform_building;
 						p->color |= 0xFF; // set alpha to 255
