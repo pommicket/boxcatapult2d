@@ -170,11 +170,11 @@ static void shaders_reload_if_necessary(State *state) {
 static void platforms_render(State *state, Platform *platforms, u32 nplatforms) {
 	GL *gl = &state->gl;
 	ShaderPlatform *shader = &state->shader_platform;
-	float thickness = state->platform_thickness;
+	float platform_render_thickness = state->platform_thickness;
 
 	shader_start_using(gl, &shader->base);
 	
-	gl->Uniform1f(shader->uniform_thickness, thickness);
+	gl->Uniform1f(shader->uniform_thickness, platform_render_thickness);
 	gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, state->transform.e);
 
 	glBegin(GL_QUADS);
@@ -182,7 +182,7 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
 		float radius = platform->size * 0.5f;
 		v2 center = platform->center;
-		v2 thickness_r = v2_polar(state->platform_thickness, platform->angle - HALF_PIf);
+		v2 thickness_r = v2_polar(platform_render_thickness, platform->angle - HALF_PIf);
 		v2 platform_r = v2_polar(radius, platform->angle);
 		v2 endpoint1 = v2_add(center, platform_r);
 		v2 endpoint2 = v2_sub(center, platform_r);
@@ -228,10 +228,15 @@ static void ball_render(State *state) {
 }
 
 
-static b2Body *platform_to_body(State *state, Platform *platform) {
+// sets platform->body to a new Box2D body.
+static void platform_make_body(State *state, Platform *platform) {
 	b2World *world = state->world;
 
 	float half_size = platform->size * 0.5f;
+	
+	if (platform->moves)
+		platform->center = platform->move_p1;
+
 	v2 center = platform->center;
 
 	b2BodyDef body_def;
@@ -243,9 +248,43 @@ static b2Body *platform_to_body(State *state, Platform *platform) {
 	b2PolygonShape shape;
 	shape.SetAsBox(half_size, state->platform_thickness);
 	body->CreateFixture(&shape, 0.0f);
-	body->SetLinearVelocity(b2Vec2(0, 3.0f));
-	body->SetAngularVelocity(2.0f);
-	return body;
+	if (platform->moves) {
+		float speed = platform->move_speed;
+		v2 p1 = platform->move_p1, p2 = platform->move_p2;
+		v2 direction = v2_normalize(v2_sub(p2, p1));
+		v2 velocity = v2_scale(direction, speed);
+		body->SetLinearVelocity(v2_to_b2(velocity));
+	} 
+	body->SetAngularVelocity(platform->rotate_speed);
+
+	platform->body = body;
+}
+
+static void simulate_time(State *state, float dt) {
+	float time_step = 0.01f; // fixed time step
+	dt += state->time_residue;
+	while (dt >= time_step) {
+		Ball *ball = &state->ball;
+		b2World *world = state->world;
+
+		world->Step(time_step, 8, 3); // step using recommended parameters
+
+		if (ball->body) {
+			b2Vec2 ball_pos = ball->body->GetPosition();
+
+			if (ball_pos.y - ball->radius < state->bottom_y) {
+				// oh no! ball reached bottom line
+				world->DestroyBody(ball->body);
+				ball->body = NULL;
+				ball->pos.y = state->bottom_y + ball->radius;
+			} else {
+				ball->pos = b2_to_v2(ball_pos);
+			}
+		}
+
+		dt -= time_step;
+	}
+	state->time_residue = dt;
 }
 
 #ifdef __cplusplus
@@ -330,15 +369,15 @@ void sim_frame(Frame *frame) {
 
 		shaders_load(state);
 		
-		state->platform_thickness = 0.15f;
+		state->platform_thickness = 0.05f;
 		state->bottom_y = 0.1f;
 
 		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
 
-		ball->radius = 0.6f;
+		ball->radius = 0.3f;
 		ball->pos = V2(0, 10.0f);
 
-		b2Vec2 gravity(0, -30.0f);
+		b2Vec2 gravity(0, -9.81f);
 		b2World *world = state->world = new b2World(gravity);
 			
 		// create ground
@@ -370,15 +409,19 @@ void sim_frame(Frame *frame) {
 		{ // initialize platforms
 			state->nplatforms = 2;
 			Platform *p = &state->platforms[0];
-			p->center = V2(0, 0.5f);
-			p->angle  = PIf * 0.46f;
+			p->center = V2(0, 0.8f);
+			p->angle  = 0;
 			p->size   = 9.0f;
-			p->body = platform_to_body(state, p);
+			p->rotate_speed = 1.0f;
+			platform_make_body(state, p);
 			++p;
-			p->center = V2(0, 0.5f);
+			p->moves = true;
+			p->move_p1 = V2(0, 0.5f);
+			p->move_p2 = V2(0, 5.5f);
+			p->move_speed = 1.0f;
 			p->angle  = PIf * 0.54f;
 			p->size   = 6.0f;
-			p->body = platform_to_body(state, p);
+			platform_make_body(state, p);
 		}
 
 		state->initialized = true;
@@ -395,31 +438,14 @@ void sim_frame(Frame *frame) {
 	shaders_reload_if_necessary(state);
 #endif
 
-	b2World *world = state->world;
+	maybe_unused b2World *world = state->world;
 	Font *font = &state->font;
 
 	// simulate physics
 	{
-		float time_step = 0.01f; // fixed time step
 		float dt = state->dt;
 		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
-		while (dt >= time_step) {
-			world->Step(time_step, 8, 3); // step using recommended parameters
-			dt -= time_step;
-		}
-		if (ball->body) {
-			b2Vec2 ball_pos = ball->body->GetPosition();
-			ball->pos.x = ball_pos.x;
-			ball->pos.y = ball_pos.y;
-
-			if (ball_pos.y - ball->radius < state->bottom_y) {
-				// oh no! ball reached bottom line
-				world->DestroyBody(ball->body);
-				ball->body = NULL;
-			} else {
-				state->distance_traveled = ball_pos.x;
-			}
-		}
+		simulate_time(state, dt);
 		for (Platform *platform = state->platforms, *end = platform + state->nplatforms; platform != end; ++platform) {
 			b2Vec2 platform_pos = platform->body->GetPosition();
 			platform->center = b2_to_v2(platform_pos);
@@ -436,7 +462,7 @@ void sim_frame(Frame *frame) {
 	}
 
 	platforms_render(state, state->platforms, state->nplatforms);
-	if (ball->body) ball_render(state);
+	ball_render(state);
 
 	{
 		v3 line_pos = V3(0, state->bottom_y, 0);
@@ -456,11 +482,17 @@ void sim_frame(Frame *frame) {
 	}
 
 	{
-		char text[256] = {0};
+		char x_text[64] = {0}, y_text[64] = {0};
 		glColor3f(0.8f,0.5f,1);
-		snprintf(text, sizeof text - 1, "Distance: %.2f m", state->distance_traveled);
-		v2 size = text_get_size(state, font, text);
-		text_render(state, font, text, v2_sub(V2(0.95f, 0.95f), size));
+		snprintf(x_text, sizeof x_text - 1, "x: %.2f m", ball->pos.x);
+		snprintf(y_text, sizeof y_text - 1, "y: %.2f m", ball->pos.y);
+		v2 x_size = text_get_size(state, font, x_text);
+		v2 y_size = text_get_size(state, font, y_text);
+		v2 pos = V2(0.95f, 0.95f);
+		text_render(state, font, x_text, v2_sub(pos, x_size));
+		pos.y -= x_size.y;
+		text_render(state, font, y_text, v2_sub(pos, y_size));
+		pos.y -= y_size.y;
 	}
 
 	#if DEBUG

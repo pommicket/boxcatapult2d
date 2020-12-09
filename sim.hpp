@@ -127,9 +127,18 @@ typedef struct {
 
 typedef struct {
 	b2Body *body;
-	v2 center;
+	v2 center; // NOTE: when creating a moving platform, you don't need to set this (it will be automatically initialized to move_pos1)
 	float size;
 	float angle;
+
+	bool moves; // does this platform move?
+
+	// if it's a moving platform
+	float move_speed;
+	v2 move_p1;
+	v2 move_p2;
+
+	float rotate_speed;
 } Platform;
 
 typedef struct {
@@ -144,6 +153,11 @@ typedef struct {
 	i32 win_width, win_height; // width,height of window
 
 	float dt; // time in seconds since last frame
+
+	// physics time left unsimulated last frame
+	// (we need to always pass Box2D the same dt for consistency, so there
+	// will be some left over, if the frame time is not a multiple of the fixed time step)
+	float time_residue; 
 	m4 transform; // the transform for converting our coordinates to GL coordinates
 
 	GL gl; // gl functions
@@ -154,8 +168,6 @@ typedef struct {
 
 	Ball ball;
 	float bottom_y; // if y goes below here, it's over
-
-	float distance_traveled;
 
 	Font font;
 

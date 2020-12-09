@@ -9,9 +9,8 @@ void main() {
 	float h = clamp(dot(pos-p1, p2-p1) / dot(p2-p1, p2-p1), 0.0, 1.0);
 	float d = length(pos - p1 - (p2-p1) * h);
 	
-	float v = max(thickness - d, 0.0);
-	v /= thickness;
-	v *= v;
+	d /= thickness;
+	float v = 1.0 - d * d;
 
 	gl_FragColor = color * v;
 }
