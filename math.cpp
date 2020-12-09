@@ -66,6 +66,12 @@ static float maxf(float a, float b) {
 	return a > b ? a : b;
 }
 
+static float sgnf(float x) {
+	if (x < 0) return -1;
+	if (x > 0) return +1;
+	return 0;
+}
+
 static float smoothstepf(float x) {
 	if (x <= 0) return 0;
 	if (x >= 1) return 1;
@@ -207,6 +213,10 @@ static v3 V3(float x, float y, float z) {
 	v.y = y;
 	v.z = z;
 	return v;
+}
+
+static v3 v3_from_v2(v2 v) {
+	return V3(v.x, v.y, 0);
 }
 
 #if MATH_GL

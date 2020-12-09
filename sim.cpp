@@ -171,11 +171,13 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	GL *gl = &state->gl;
 	ShaderPlatform *shader = &state->shader_platform;
 	float platform_render_thickness = state->platform_thickness;
+	m4 transform = state->transform;
 
 	shader_start_using(gl, &shader->base);
 	
 	gl->Uniform1f(shader->uniform_thickness, platform_render_thickness);
 	gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, state->transform.e);
+	
 
 	glBegin(GL_QUADS);
 	glColor3f(1,0,1);
@@ -203,6 +205,43 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	}
 	glEnd();
 	shader_stop_using(gl);
+
+	if (state->building) {
+		// show arrows for platforms
+		for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
+			gl_rgbacolor(platform->color);
+			if (platform->rotates) {
+				float speed = platform->rotate_speed;
+				float angle = speed * 0.5f;
+				if (angle) {
+					float theta1 = HALF_PIf;
+					float theta2 = theta1 + angle;
+					float dtheta = 0.03f * sgnf(angle);
+					float radius = platform->size;
+					glBegin(GL_LINE_STRIP);
+					for (float theta = theta1; angle > 0 ? (theta < theta2) : (theta > theta2); theta += dtheta) {
+						v3 point = v3_from_v2(v2_add(platform->center, v2_polar(radius, theta)));
+						point = m4_mul_v3(transform, point);
+						v3_gl_vertex(point);
+					}
+					glEnd();
+
+					v3 p1 = v3_from_v2(v2_add(platform->center, v2_polar(radius-0.2f, theta2-0.1f * sgnf(angle))));
+					v3 p2 = v3_from_v2(v2_add(platform->center, v2_polar(radius, theta2)));
+					v3 p3 = v3_from_v2(v2_add(platform->center, v2_polar(radius+0.2f, theta2-0.1f * sgnf(angle))));
+
+					p1 = m4_mul_v3(transform, p1);
+					p2 = m4_mul_v3(transform, p2);
+					p3 = m4_mul_v3(transform, p3);
+					glBegin(GL_LINE_STRIP);
+					v3_gl_vertex(p1);
+					v3_gl_vertex(p2);
+					v3_gl_vertex(p3);
+					glEnd();
+				}
+			}
+		}
+	}
 }
 
 // render the ball
@@ -367,9 +406,10 @@ static void simulate_time(State *state, float dt) {
 	state->time_residue = dt;
 }
 
-static void platform_delete(State *state, u32 index) {
+static void platform_delete(State *state, Platform *platform) {
 	Platform *platforms = state->platforms;
 	u32 nplatforms = state->nplatforms;
+	u32 index = (u32)(platform - platforms);
 	
 	state->world->DestroyBody(platforms[index].body);
 
@@ -384,6 +424,46 @@ static void platform_delete(State *state, u32 index) {
 	}
 	--state->nplatforms;
 
+}
+
+static void correct_mouse_button(State *state, u8 *button) {
+	if (*button == MOUSE_LEFT) {
+		if (state->shift) {
+			// shift+left mouse = right mouse
+			*button = MOUSE_RIGHT;
+		} else if (state->ctrl) {
+			// ctrl+left mouse = middle mouse
+			*button = MOUSE_MIDDLE;
+		}
+	}
+}
+
+static void ball_reset(State *state) {
+	Ball *ball = &state->ball;
+	b2World *world = state->world;
+	if (ball->body)
+		world->DestroyBody(ball->body);
+
+
+	ball->radius = 0.3f;
+	ball->pos = V2(0, 10.0f);
+
+	// create ball
+	b2BodyDef ball_def;
+	ball_def.type = b2_dynamicBody;
+	ball_def.position.Set(ball->pos.x, ball->pos.y);
+	b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
+	
+	b2CircleShape ball_shape;
+	ball_shape.m_radius = ball->radius;
+
+	b2FixtureDef ball_fixture;
+	ball_fixture.shape = &ball_shape;
+	ball_fixture.density = 1.0f;
+	ball_fixture.friction = 0.3f;
+	ball_fixture.restitution = 0.3f; // bounciness
+
+	ball_body->CreateFixture(&ball_fixture);
 }
 
 #ifdef __cplusplus
@@ -405,6 +485,17 @@ void sim_frame(Frame *frame) {
 	GL *gl = &state->gl;
 	maybe_unused u8 *keys_pressed = input->keys_pressed;
 	maybe_unused bool *keys_down = input->keys_down;
+	state->ctrl = input->keys_down[KEY_LCTRL] || input->keys_down[KEY_RCTRL];
+	state->shift = input->keys_down[KEY_LSHIFT] || input->keys_down[KEY_RSHIFT];
+
+	for (u32 i = 0; i < input->nmouse_presses; ++i) {
+		MousePress *p = &input->mouse_presses[i];
+		correct_mouse_button(state, &p->button);
+	}
+	for (u32 i = 0; i < input->nmouse_releases; ++i) {
+		MouseRelease *r = &input->mouse_releases[i];
+		correct_mouse_button(state, &r->button);
+	}
 
 	state->win_width  = (float)width;
 	state->win_height = (float)height;
@@ -474,9 +565,6 @@ void sim_frame(Frame *frame) {
 
 		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
 
-		ball->radius = 0.3f;
-		ball->pos = V2(0, 10.0f);
-
 		b2Vec2 gravity(0, -9.81f);
 		b2World *world = state->world = new b2World(gravity);
 			
@@ -497,22 +585,7 @@ void sim_frame(Frame *frame) {
 		left_wall_shape.SetAsBox(0.5f, 1000);
 		left_wall_body->CreateFixture(&left_wall_shape, 0);
 
-		// create ball
-		b2BodyDef ball_def;
-		ball_def.type = b2_dynamicBody;
-		ball_def.position.Set(ball->pos.x, ball->pos.y);
-		b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
-		
-		b2CircleShape ball_shape;
-		ball_shape.m_radius = ball->radius;
-
-		b2FixtureDef ball_fixture;
-		ball_fixture.shape = &ball_shape;
-		ball_fixture.density = 1.0f;
-		ball_fixture.friction = 0.3f;
-		ball_fixture.restitution = 0.3f; // bounciness
-
-		ball_body->CreateFixture(&ball_fixture);
+		ball_reset(state);
 		
 		{ // initialize platforms
 			Platform *p = &state->platforms[0];
@@ -571,6 +644,12 @@ void sim_frame(Frame *frame) {
 		float dt = state->dt;
 		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
 		simulate_time(state, dt);
+		if (keys_pressed[KEY_SPACE]) {
+			state->building = true;
+			state->simulating = false;
+			keys_pressed[KEY_SPACE] = 0;
+			ball_reset(state);
+		}
 	}
 
 	if (state->building) {
@@ -591,14 +670,36 @@ void sim_frame(Frame *frame) {
 		if (keys_down[KEY_DOWN])
 			platform_building->size -= size_change_amount;
 
+		if (platform_building->rotates) {
+			// change rotation speed
+			float rotate_change_amount = 2.0f * dt;
+			if (keys_down[KEY_Q])
+				platform_building->rotate_speed += rotate_change_amount;
+			if (keys_down[KEY_E])
+				platform_building->rotate_speed -= rotate_change_amount;
+		}
+
+		platform_building->rotate_speed = clampf(platform_building->rotate_speed, -3, +3);
 		platform_building->size = clampf(platform_building->size, 0.3f, 10.0f);
 		platform_building->angle = fmodf(platform_building->angle, TAUf);
 
+		if (keys_pressed[KEY_R]) {
+			// toggle rotating platform
+			platform_building->rotates = !platform_building->rotates;
+			if (platform_building->rotate_speed == 0) {
+				platform_building->rotate_speed = 1;
+			}
+		}
+
 		for (u32 i = 0; i < input->nmouse_presses; ++i) {
-			if (input->mouse_presses[i].button == MOUSE_LEFT) {
+			MousePress *press = &input->mouse_presses[i];
+			u8 button = press->button;
+
+			if (button == MOUSE_LEFT) {
 				if (mouse_platform) {
-					// click to delete platform
-					platform_delete(state, (u32)(mouse_platform - state->platforms));
+					*platform_building = *mouse_platform;
+					platform_delete(state, mouse_platform);
+					platform_building->color = (platform_building->color & 0xFFFFFF00) | 0x7F;
 				} else {
 					// left-click to build platform
 					if (state->nplatforms < MAX_PLATFORMS) {
@@ -607,6 +708,11 @@ void sim_frame(Frame *frame) {
 						p->color |= 0xFF; // set alpha to 255
 						platform_make_body(state, p);
 					}
+				}
+			} else if (button == MOUSE_RIGHT) {
+				if (mouse_platform) {
+					// right-click to delete platform
+					platform_delete(state, mouse_platform);
 				}
 			}
 		}
@@ -620,15 +726,16 @@ void sim_frame(Frame *frame) {
 
 	u32 prev_mouse_platform_color = mouse_platform ? mouse_platform->color : 0;
 	if (state->building) {
-		// turn platform under mouse red (if user clicks, it will be deleted)
-		if (mouse_platform) mouse_platform->color = 0xFF0000FF;
+		// turn platform under mouse blue
+		if (mouse_platform) mouse_platform->color = 0x007FFFFF;
 	}
 	platforms_render(state, state->platforms, state->nplatforms);
 	if (state->building) {
-		if (mouse_platform)
+		if (mouse_platform) {
 			mouse_platform->color = prev_mouse_platform_color;
-		else
+		} else {
 			platforms_render(state, &state->platform_building, 1);
+		}
 	}
 	ball_render(state);
 

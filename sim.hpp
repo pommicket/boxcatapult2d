@@ -132,12 +132,12 @@ typedef struct {
 	float angle;
 
 	bool moves; // does this platform move?
+	bool rotates; // does this platform rotate?
 
 	// if it's a moving platform
 	float move_speed;
 	v2 move_p1;
 	v2 move_p2;
-
 
 	float rotate_speed;
 
@@ -163,6 +163,7 @@ typedef struct {
 	float win_width, win_height; // width,height of window in pixels
 
 	v2 mouse_pos; // mouse position in Box2D (not GL) coordinates
+	bool shift, ctrl; // is either shift/ctrl key down?
 
 	float dt; // time in seconds since last frame
 

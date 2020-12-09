@@ -5,8 +5,8 @@ obj/debug: physics obj/sim.so obj
 	touch obj/debug
 physics: main.cpp gui.hpp sim.cpp time.cpp
 	$(CXX) main.cpp -o $@ $(DEBUG_CFLAGS)
-obj/sim.so: *.[ch]* obj
-	$(CXX) sim.cpp -fPIC -shared -o $@ $(DEBUG_CFLAGS)
-	touch obj/sim.so_changed
+# obj/sim.so: *.[ch]* obj
+# 	$(CXX) sim.cpp -fPIC -shared -o $@ $(DEBUG_CFLAGS)
+#	touch obj/sim.so_changed
 obj:
 	mkdir -p obj

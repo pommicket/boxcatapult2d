@@ -1,8 +1,12 @@
+#if DEBUG
+#define AUTO_RELOAD_CODE 0
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
 #include "gui.hpp"
-#if DEBUG
+#if AUTO_RELOAD_CODE
 typedef void (*SimFrameFn)(Frame *);
 #include "time.cpp"
 #else
@@ -195,7 +199,7 @@ int main(void) {
 #endif
 	Frame frame = {};
 	Input *input = &frame.input;
-#if DEBUG
+#if AUTO_RELOAD_CODE
 	struct timespec dynlib_last_modified = {};
 	SimFrameFn sim_frame = NULL;
 	#if __unix__
@@ -304,7 +308,7 @@ int main(void) {
 
 		frame.close = input->closed;
 
-	#if DEBUG
+	#if AUTO_RELOAD_CODE
 	#if __unix__
 	#define DYNLIB_EXT "so"
 	#else
