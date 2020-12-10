@@ -2,9 +2,6 @@
 #define AUTO_RELOAD_CODE 0
 #endif
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
 #include "gui.hpp"
 #if AUTO_RELOAD_CODE
 typedef void (*SimFrameFn)(Frame *);

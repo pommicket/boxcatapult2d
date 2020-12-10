@@ -1,3 +1,4 @@
+#version 110
 // "position" within line (0,0) = bottom-left corner, (1,1) = top-right corner
 attribute vec2 vertex_p1, vertex_p2;
 varying vec4 color;

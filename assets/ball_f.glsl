@@ -1,3 +1,4 @@
+#version 110
 varying vec4 color;
 varying vec2 pos;
 uniform vec2 center;

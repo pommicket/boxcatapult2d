@@ -31,14 +31,14 @@ static int text_font_load_(State *state, Font *font, u8 const *data,
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 			font->texture = texture;
-			debug_println("Loaded font (size = %f), using %d rows of a %dx%d bitmap.",
+			logln("Loaded font (size = %f), using %d rows of a %dx%d bitmap.",
 				char_height, err, bitmap_width, bitmap_height);
 		} else {
 			// bitmap not big enough 
 			ret = 0;
 		}
 	} else {
-		debug_println("Not enough memory for font bitmap.");
+		logln("Not enough memory for font bitmap.");
 		ret = -1;
 	}
 	tmp_pop(state, mark);
@@ -69,11 +69,11 @@ static bool text_font_load(State *state, Font *font, char const *filename, float
 			}
 			free(data);
 		} else {
-			debug_println("Out of memory.");
+			logln("Out of memory.");
 		}
 		fclose(fp);
 	} else {
-		debug_println("File not found: %s.", filename);
+		logln("File not found: %s.", filename);
 	}
 	if (!success) {
 		memset(font, 0, sizeof *font);

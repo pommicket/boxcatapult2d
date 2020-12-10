@@ -1,6 +1,9 @@
 #ifndef TYPES_H_
 #define TYPES_H_
 
+#if _WIN32
+#include <windows.h>
+#endif
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -61,9 +64,9 @@ typedef int64_t i64;
 
 #if DEBUG
 #if __unix__
-#define debug_println(...) printf(__VA_ARGS__), printf("\n")
+#define logln(...) printf(__VA_ARGS__), printf("\n")
 #else // __unix__
-static void debug_println(char const *fmt, ...) {
+static void logln(char const *fmt, ...) {
     char buf[256];
     va_list args;
     va_start(args, fmt);
@@ -74,7 +77,7 @@ static void debug_println(char const *fmt, ...) {
 }
 #endif // __unix__
 #else // DEBUG
-#define debug_println(...)
+#define logln(...)
 #endif
 
 

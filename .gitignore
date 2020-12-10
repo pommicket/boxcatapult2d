@@ -11,6 +11,7 @@ TAGS
 *.dll
 *.xcf
 *.lib
+*.exp
 SDL2
 box2d
 .vs*

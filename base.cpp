@@ -1,11 +1,5 @@
 // this file includes functions, etc. used just about everywhere
 
-#if DEBUG
-#define logln(...) printf(__VA_ARGS__), printf("\n");
-#else
-#define logln(...)
-#endif
-
 // allocates aligned temporary memory 
 static u8 *tmp_alloc(State *state, size_t bytes) {
 	u32 used = state->tmp_mem_used;

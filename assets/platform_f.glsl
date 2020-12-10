@@ -1,3 +1,4 @@
+#version 110
 varying vec4 color;
 varying vec2 p1, p2;
 varying vec2 pos;
