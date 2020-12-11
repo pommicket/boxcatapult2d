@@ -20,6 +20,8 @@
 #include "base.cpp"
 #include "text.cpp"
 
+#define BALL_STARTING_X 3.0f
+
 static b2Vec2 v2_to_b2(v2 v) {
 	return b2Vec2(v.x, v.y);
 }
@@ -27,6 +29,13 @@ static b2Vec2 v2_to_b2(v2 v) {
 static v2 b2_to_v2(b2Vec2 v) {
 	return V2(v.x, v.y);
 }
+
+// converts Box2D coordinates to GL coordinates
+static v2 b2_to_gl(State const *state, v2 box2d_coordinates) {
+	v3 v = m4_mul_v3(state->transform, v3_from_v2(box2d_coordinates));
+	return V2(v.x, v.y);
+}
+
 
 // compile a vertex or fragment shader
 static GLuint shader_compile_from_file(GL *gl, char const *filename, GLenum shader_type) {
@@ -166,10 +175,37 @@ static void shaders_reload_if_necessary(State *state) {
 }
 #endif
 
-// converts Box2D coordinates to GL coordinates
-static v2 b2_to_gl(State const *state, v2 box2d_coordinates) {
-	v3 v = m4_mul_v3(state->transform, v3_from_v2(box2d_coordinates));
-	return V2(v.x, v.y);
+// how far right could any part of this platform possibly go?
+static float platform_rightmost_x(Platform const *platform) {
+	float angle;
+	if (platform->rotates)
+		angle = 0; // for rotating platforms, the maximum x coordinate is achieved when the platform has an angle of 0
+	else
+		angle = platform->angle;
+	float x_past_center = platform->radius * fabsf(cosf(angle)); // width of platform to the right of the center
+	v2 center;
+	if (platform->moves) {
+		v2 p1 = platform->move_p1, p2 = platform->move_p2;
+		// pick the point with the higher x coordinate
+		if (p1.x > p2.x)
+			center = p1;
+		else
+			center = p2;
+	} else {
+		center = platform->center;
+	}
+	return center.x + x_past_center;
+}
+
+// where the ball's distance traveled should be measured from
+static float platforms_starting_line(Platform const *platforms, u32 nplatforms) {
+	float rightmost_x = BALL_STARTING_X; // the starting line can't be to the left of the ball
+	for (u32 i = 0; i < nplatforms; ++i) {
+		float x = platform_rightmost_x(&platforms[i]);
+		if (x > rightmost_x)
+			rightmost_x = x;
+	}
+	return rightmost_x;
 }
 
 // render the given platforms
@@ -187,7 +223,7 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	glBegin(GL_QUADS);
 	glColor3f(1,0,1);
 	for (Platform *platform = platforms, *end = platform + nplatforms; platform != end; ++platform) {
-		float radius = platform->size * 0.5f;
+		float radius = platform->radius;
 		v2 center = platform->center;
 		v2 thickness_r = v2_polar(platform_render_thickness, platform->angle - HALF_PIf);
 		v2 platform_r = v2_polar(radius, platform->angle);
@@ -224,7 +260,7 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 					float theta1 = HALF_PIf;
 					float theta2 = theta1 + angle;
 					float dtheta = 0.03f * sgnf(angle);
-					float radius = platform->size;
+					float radius = platform->radius;
 					v2 last_point;
 					for (float theta = theta1; angle > 0 ? (theta < theta2) : (theta > theta2); theta += dtheta) {
 						v2 point = b2_to_gl(state, v2_add(platform->center, v2_polar(radius, theta)));
@@ -321,7 +357,7 @@ static Platform *platform_from_user_data(State *state, uintptr_t user_data) {
 static void platform_make_body(State *state, Platform *platform) {
 	b2World *world = state->world;
 
-	float half_size = platform->size * 0.5f;
+	float radius = platform->radius;
 	
 	if (platform->moves)
 		platform->center = platform->move_p1;
@@ -335,11 +371,11 @@ static void platform_make_body(State *state, Platform *platform) {
 	b2Body *body = world->CreateBody(&body_def);
 
 	b2PolygonShape shape;
-	shape.SetAsBox(half_size, state->platform_thickness);
+	shape.SetAsBox(radius, state->platform_thickness);
 
 	b2FixtureDef fixture;
 	fixture.shape = &shape;
-	fixture.friction = 0.8f;
+	fixture.friction = 0.5f;
 	fixture.userData.pointer = platform_to_user_data(state, platform);
 
 	body->CreateFixture(&fixture);
@@ -391,15 +427,27 @@ static void simulate_time(State *state, float dt) {
 		world->Step(time_step, 8, 3); // step using recommended parameters
 
 		if (ball->body) {
+			state->stuck_time += time_step;
 			b2Vec2 ball_pos = ball->body->GetPosition();
-
-			if (ball_pos.y - ball->radius < state->bottom_y) {
-				// oh no! ball reached bottom line
+			
+			bool reached_bottom = ball_pos.y - ball->radius < state->bottom_y; // ball reached bottom line
+			float max_stuck_time = 10;
+			bool stuck = state->stuck_time > max_stuck_time; // ball hasn't gotten any further in a while. it's over
+			if (reached_bottom || stuck) {
 				world->DestroyBody(ball->body);
 				ball->body = NULL;
-				ball->pos.y = state->bottom_y + ball->radius;
+				if (reached_bottom) {
+					// place ball on ground
+					ball->pos.y = state->bottom_y + ball->radius;
+				}
+				if (stuck)
+					state->stuck_time = max_stuck_time;
 			} else {
 				ball->pos = b2_to_v2(ball_pos);
+				if (ball->pos.x > state->furthest_ball_x_pos) {
+					state->furthest_ball_x_pos = ball->pos.x;
+					state->stuck_time = 0;
+				}
 			}
 		}
 
@@ -436,6 +484,7 @@ static void simulate_time(State *state, float dt) {
 				
 			}
 		}
+
 
 		dt -= time_step;
 	}
@@ -483,7 +532,7 @@ static void setup_reset(State *state) {
 
 
 		ball->radius = 0.3f;
-		ball->pos = V2(0, 10.0f);
+		ball->pos = V2(BALL_STARTING_X, 10.0f);
 
 		// create ball
 		b2BodyDef ball_def;
@@ -498,9 +547,10 @@ static void setup_reset(State *state) {
 		ball_fixture.shape = &ball_shape;
 		ball_fixture.density = 1.0f;
 		ball_fixture.friction = 0.3f;
-		ball_fixture.restitution = 0.3f; // bounciness
+		ball_fixture.restitution = 0.6f; // bounciness
 
 		ball_body->CreateFixture(&ball_fixture);
+
 	}
 	for (Platform *p = state->platforms, *end = p + state->nplatforms; p != end; ++p) { // reset platforms
 		p->angle = p->start_angle;
@@ -508,6 +558,8 @@ static void setup_reset(State *state) {
 		p->body->SetTransform(v2_to_b2(p->center), p->angle);
 	}
 	state->setting_move_p2 = false;
+	state->furthest_ball_x_pos = 0;
+	state->stuck_time = 0;
 }
 
 #ifdef __cplusplus
@@ -543,6 +595,7 @@ void sim_frame(Frame *frame) {
 
 	state->win_width  = (float)width;
 	state->win_height = (float)height;
+	state->aspect_ratio = state->win_width / state->win_height;
 	state->dt = (float)frame->dt;
 	
 
@@ -605,9 +658,10 @@ void sim_frame(Frame *frame) {
 		
 		state->platform_thickness = 0.05f;
 		state->bottom_y = 0.1f;
-		state->left_x   = -3.0f;
+		state->left_x   = 0;
 
 		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
+		text_font_load(state, &state->small_font, "assets/font.ttf", 18.0f);
 
 		b2Vec2 gravity(0, -9.81f);
 		b2World *world = state->world = new b2World(gravity);
@@ -631,21 +685,24 @@ void sim_frame(Frame *frame) {
 
 		
 		{ // initialize platforms
+		#if 0
 			Platform *p = &state->platforms[0];
 			p->start_angle  = 0;
-			p->size   = 1.0f;
+			p->radius = 0.5f;
 			p->center = V2(1.5f, 1.5f);
 			p->color = 0xFF00FFFF;
 			platform_make_body(state, p);
 			state->nplatforms = (u32)(p - state->platforms + 1);
+		#endif
 
 			Platform *b = &state->platform_building;
-			b->size = 3.0f;
+			b->radius = 1.5f;
 			b->color = 0xFF00FF7F;
 		}
 
 		setup_reset(state);
-		
+
+		state->pan = ball->pos;
 		state->building = true;
 			
 		state->initialized = true;
@@ -665,9 +722,14 @@ void sim_frame(Frame *frame) {
 	{
 		float half_height = 10.0f;
 		float half_width = half_height * state->win_width / state->win_height;
-		float ball_x = ball->pos.x, ball_y = ball->pos.y;
-		// center view around ball
-		state->transform = m4_ortho(ball_x - half_width, ball_x + half_width, ball_y - half_height, ball_y + half_height, -1, +1);
+		float view_x = ball->pos.x, view_y = ball->pos.y;
+		if (state->building) {
+			// pan = center of view
+			view_x = state->pan.x;
+			view_y = state->pan.y;
+		}
+		// center view around (view_x, view_y)
+		state->transform = m4_ortho(view_x - half_width, view_x + half_width, view_y - half_height, view_y + half_height, -1, +1);
 		state->inv_transform = m4_inv(state->transform);
 	}
 
@@ -682,6 +744,7 @@ void sim_frame(Frame *frame) {
 	}
 
 	Font *font = &state->font;
+	Font *small_font = &state->small_font;
 	Platform *mouse_platform = platform_at_mouse_pos(state);
 
 	if (state->simulating) {
@@ -722,6 +785,11 @@ void sim_frame(Frame *frame) {
 			}
 		}
 
+		if (keys_pressed[KEY_B]) {
+			// pan back to ball
+			state->pan = ball->pos;
+		}
+
 		if (state->setting_move_p2) {
 			platform_building->move_p2 = state->mouse_pos;
 		} else {
@@ -730,7 +798,7 @@ void sim_frame(Frame *frame) {
 		}
 		float dt = state->dt;
 		float rotate_amount = 2.0f * dt;
-		float size_change_amount = 4.0f * dt;
+		float radius_change_amount = 2.0f * dt;
 		// rotate platform using left/right
 		if (keys_down[KEY_LEFT]) {
 			platform_building->angle += rotate_amount;
@@ -741,31 +809,52 @@ void sim_frame(Frame *frame) {
 
 		// change size of platform using up/down
 		if (keys_down[KEY_UP])
-			platform_building->size += size_change_amount;
+			platform_building->radius += radius_change_amount;
 		if (keys_down[KEY_DOWN])
-			platform_building->size -= size_change_amount;
+			platform_building->radius -= radius_change_amount;
 
-		if (platform_building->rotates) {
-			// change rotation speed
-			float rotate_change_amount = 2.0f * dt;
-			if (keys_down[KEY_Q])
-				platform_building->rotate_speed += rotate_change_amount;
-			if (keys_down[KEY_E])
-				platform_building->rotate_speed -= rotate_change_amount;
+		// pan
+		float pan_amount = 5.0f * dt;
+		v2 *pan = &state->pan;
+		if (keys_down[KEY_A])
+			pan->x -= pan_amount;
+		if (keys_down[KEY_D])
+			pan->x += pan_amount;
+		if (keys_down[KEY_S])
+			pan->y -= pan_amount;
+		if (keys_down[KEY_W])
+			pan->y += pan_amount;
+
+
+		// change rotation speed
+		float rotate_change_amount = 2.0f * dt;
+		if (keys_down[KEY_Q]) {
+			if (!platform_building->rotates) {
+				platform_building->rotates = true;
+				platform_building->rotate_speed = 0;
+			}
+			platform_building->rotate_speed += rotate_change_amount;
+		} 
+		if (keys_down[KEY_E]) {
+			if (!platform_building->rotates) {
+				platform_building->rotates = true;
+				platform_building->rotate_speed = 0;
+			}
+			platform_building->rotate_speed -= rotate_change_amount;
 		}
 
 		if (platform_building->moves) {
 			// change move speed
 			float speed_change_amount = 2.0f * dt;
-			if (keys_down[KEY_A])
+			if (keys_down[KEY_Z])
 				platform_building->move_speed -= speed_change_amount;
-			if (keys_down[KEY_D])
+			if (keys_down[KEY_X])
 				platform_building->move_speed += speed_change_amount;
 		}
 
 		platform_building->rotate_speed = clampf(platform_building->rotate_speed, -3, +3);
 		platform_building->move_speed = clampf(platform_building->move_speed, 0.1f, 5.0f);
-		platform_building->size = clampf(platform_building->size, 0.3f, 10.0f);
+		platform_building->radius = clampf(platform_building->radius, 0.2f, 5.0f);
 		platform_building->angle = fmodf(platform_building->angle, TAUf);
 
 		for (u32 i = 0; i < input->nmouse_presses; ++i) {
@@ -816,6 +905,16 @@ void sim_frame(Frame *frame) {
 			mouse_platform->color = prev_mouse_platform_color;
 		} else {
 			platforms_render(state, &state->platform_building, 1);
+		#if 1
+			{ // show rightmost x coordinate of platform
+				glBegin(GL_LINES);
+				v2 line_pos = V2(platform_rightmost_x(&state->platform_building), 0);
+				float x = b2_to_gl(state, line_pos).x;
+				glVertex2f(x, -1);
+				glVertex2f(x, +1);
+				glEnd();
+			}
+		#endif
 		}
 	}
 	ball_render(state);
@@ -851,21 +950,52 @@ void sim_frame(Frame *frame) {
 		glVertex2f(-1, bottom_y);
 		glEnd();
 
+		if (state->simulating) { // starting line & distance traveled
+			float starting_line = platforms_starting_line(state->platforms, state->nplatforms);
+			float starting_line_gl = b2_to_gl(state, V2(starting_line, 0)).x;
+			glBegin(GL_LINES);
+			glColor3f(1,1,0);
+			glVertex2f(starting_line_gl, bottom_y);
+			glVertex2f(starting_line_gl, +1);
+			glEnd();
+
+			char dist_text[64] = {0};
+			if (ball->body)
+				glColor4f(0.8f,0.8f,0.8f,0.8f); // still going
+			else
+				glColor4f(0.5f,1,0.5f,1.0f); // done
+			snprintf(dist_text, sizeof dist_text - 1, "Distance: %.2f m", ball->pos.x - starting_line);
+			v2 dist_size = text_get_size(state, font, dist_text);
+
+			char best_text[64] = {0};
+			snprintf(best_text, sizeof best_text - 1, "Best distance: %.2f m", state->furthest_ball_x_pos - starting_line);
+			v2 best_size = text_get_size(state, font, best_text);
+
+
+			v2 pos = V2(0.98f - maxf(dist_size.x, best_size.x), 0.98f);
+			pos.y -= dist_size.y;
+			text_render(state, font, dist_text, pos);
+			pos.y -= best_size.y;
+			text_render(state, font, best_text, pos);
+
+		}
+
 	}
 
-	{
-		char x_text[64] = {0}, y_text[64] = {0};
-		glColor3f(0.8f,0.5f,1);
-		snprintf(x_text, sizeof x_text - 1, "x: %.2f m", ball->pos.x);
-		snprintf(y_text, sizeof y_text - 1, "y: %.2f m", ball->pos.y);
-		v2 x_size = text_get_size(state, font, x_text);
-		v2 y_size = text_get_size(state, font, y_text);
-		v2 pos = V2(0.95f, 0.95f);
-		text_render(state, font, x_text, v2_sub(pos, x_size));
-		pos.y -= x_size.y;
-		text_render(state, font, y_text, v2_sub(pos, y_size));
-		pos.y -= y_size.y;
+	{ // position of ball
+		char text[64] = {0};
+		glColor3f(0.5f,0.5f,0.5f);
+		snprintf(text, sizeof text - 1, "(%.2f, %.2f)", ball->pos.x, ball->pos.y);
+		v2 size = text_get_size(state, small_font, text);
+		v2 pos = V2(1 - size.x, -1 + size.y);
+		text_render(state, small_font, text, pos);
+		snprintf(text, sizeof text - 1, "Last record: %.1fs ago", state->stuck_time);
+		size = text_get_size(state, small_font, text);
+		pos.x = 1 - size.x;
+		pos.y += size.y * 1.5f;
+		text_render(state, small_font, text, pos);
 	}
+
 
 	#if DEBUG
 	GLuint error = glGetError();

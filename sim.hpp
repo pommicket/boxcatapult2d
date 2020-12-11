@@ -133,7 +133,7 @@ typedef struct {
 	float start_angle;
 
 	v2 center;
-	float size;
+	float radius; // half of the width of the platform
 	float angle;
 
 	bool moves; // does this platform move?
@@ -166,6 +166,7 @@ typedef struct {
 	bool initialized;
 
 	float win_width, win_height; // width,height of window in pixels
+	float aspect_ratio; // width / height
 
 	v2 mouse_pos; // mouse position in Box2D (not GL) coordinates
 	bool shift, ctrl; // is either shift/ctrl key down?
@@ -190,10 +191,16 @@ typedef struct {
 	b2World *world; // Box2D world
 
 	Ball ball;
+	float furthest_ball_x_pos; // furthest distance the ball has reached
+	float stuck_time; // amount of time furthest_ball_x_pos hasn't changed for
+
 	float bottom_y; // y-position of "floor" (if y goes below here, it's over)
 	float left_x; // y-position of left wall
 
+	v2 pan; // pan for the editor
+
 	Font font;
+	Font small_font;
 
 	Platform platform_building; // the platform the user is currently placing
 

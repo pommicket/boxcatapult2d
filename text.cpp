@@ -94,9 +94,11 @@ static void text_render_(State *state, Font *font, char const *s, float *xp, flo
 	x = (x + 1) * 0.5f * widthf;
 	y = (1 - (y + 1) * 0.5f) * heightf;
 
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, font->texture);
-	glBegin(GL_QUADS);
+	if (render) {
+		glEnable(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, font->texture);
+		glBegin(GL_QUADS);
+	}
 	for (; *s; ++s) {
 		char c = *s;
 		if (c >= 32 && (size_t)c < 32+arr_count(font->char_data)) {
@@ -120,8 +122,10 @@ static void text_render_(State *state, Font *font, char const *s, float *xp, flo
 			}
 		}
 	}
-	glEnd();
-	glDisable(GL_TEXTURE_2D);
+	if (render) {
+		glEnd();
+		glDisable(GL_TEXTURE_2D);
+	}
 	*xp = (x * inv_widthf) * 2 - 1;
 	*yp = (1 - y * inv_heightf) * 2 - 1;
 }
@@ -134,7 +138,7 @@ static void text_render(State *state, Font *font, char const *s, v2 pos) {
 }
 
 static float text_font_char_height(State *state, Font *font) {
-	return font->char_height / (float)state->win_width * 1.3333333f;
+	return font->char_height / (float)state->win_height * 1.3333333f;
 }
 
 static v2 text_get_size(State *state, Font *font, char const *s) {
