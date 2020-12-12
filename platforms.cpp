@@ -96,7 +96,7 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 					float theta2 = theta1 + angle;
 					float dtheta = 0.03f * sgnf(angle);
 					float radius = platform->radius;
-					v2 last_point;
+					v2 last_point = {};
 					for (float theta = theta1; angle > 0 ? (theta < theta2) : (theta > theta2); theta += dtheta) {
 						v2 point = b2_to_gl(state, v2_add(platform->center, v2_polar(radius, theta)));
 						if (theta != theta1) {
@@ -154,6 +154,7 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 // sets platform->body to a new Box2D body.
 static void platform_make_body(State *state, Platform *platform, u32 index) {
 	b2World *world = state->world;
+	assert(!platform->body);
 
 	float radius = platform->radius;
 	
@@ -272,7 +273,7 @@ static void platform_write_to_file(Platform const *p, FILE *fp) {
 	}
 }
 
-static void platform_read_from_file(Platform const *p, FILE *fp) {
+static void platform_read_from_file(Platform *p, FILE *fp) {
 	p->radius = fread_float(fp);
 	p->start_angle = fread_float(fp);
 	p->color = fread_u32(fp);

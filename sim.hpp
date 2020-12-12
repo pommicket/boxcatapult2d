@@ -126,7 +126,7 @@ typedef struct {
 } ShaderBall;
 
 typedef struct {
-	b2Body *body;
+	b2Body *body; // Box2D body for platform -- created when setup_use is called (for setups), or when the platform is manually built
 
 
 	v2 center;
@@ -218,7 +218,7 @@ typedef struct {
 	u32 nplatforms;
 	Platform platforms[MAX_PLATFORMS];
 
-#define GENERATION_SIZE 100
+#define GENERATION_SIZE 1000
 	Setup generation[GENERATION_SIZE];
 
 	u32 tmp_mem_used; // this is not measured in bytes, but in MaxAligns 

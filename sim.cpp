@@ -250,6 +250,8 @@ void sim_frame(Frame *frame) {
 	#undef optional_gl_proc
 	#undef required_gl_proc
 
+		make_directory("setups");
+
 		shaders_load(state);
 		
 		state->platform_thickness = 0.05f;
@@ -280,10 +282,33 @@ void sim_frame(Frame *frame) {
 		left_wall_body->CreateFixture(&left_wall_shape, 0);
 
 		
-		for (size_t i = 0; i < arr_count(state->generation); ++i) {
-			setup_random(state, &state->generation[i], 50);
-			printf("%f \n",setup_score(state, &state->generation[i]));
+		#if 1
+		Setup *best_setup = &state->generation[0];
+		for (size_t i = 0; i < GENERATION_SIZE; ++i) {
+			Setup *setup = &state->generation[i];
+			setup_random(setup, 50);
+			char filename[64] = {0};
+			snprintf(filename, sizeof filename-1, "setups/%03zu.b2s", i);
+			setup_write_to_file(setup, filename);
+			setup_score(state, setup);
+			logln("Setup %zu: %.2f m", i, setup->score);
+			if (setup->score > best_setup->score) {
+				best_setup = setup;
+			}
 		}
+		logln("Best: setup %ld", (long)(best_setup - state->generation));
+		setup_use(state, best_setup);
+		assert(state->nplatforms == best_setup->nplatforms);
+		#endif
+
+	#if 0
+		Setup *setup = &state->generation[0];
+		//setup_random(state, setup, 50);
+		//setup_write_to_file(setup, "setups/test.b2s");
+		setup_read_from_file(setup, "setups/test.b2s");
+		setup_use(state, setup);
+	#endif
+
 
 		{
 			Platform *b = &state->platform_building;
@@ -488,6 +513,7 @@ void sim_frame(Frame *frame) {
 		if (keys_pressed[KEY_SPACE]) {
 			state->building = false;
 			state->simulating = true;
+			setup_reset(state);
 		}
 	}
 

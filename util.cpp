@@ -173,7 +173,7 @@ static int qsort_stricmp(const void *av, const void *bv) {
 #endif
 }
 
-static void fwrite_bool(FILE *fp, bool x) {
+static void fwrite_u8(FILE *fp, u8 x) {
 	fwrite(&x, sizeof x, 1, fp);
 }
 
@@ -189,27 +189,37 @@ static void fwrite_v2(FILE *fp, v2 v) {
 	fwrite(&v, sizeof v, 1, fp);
 }
 
-static void fread_bool(FILE *fp) {
-	bool x;
+static u8 fread_u8(FILE *fp) {
+	u8 x;
 	fread(&x, sizeof x, 1, fp);
 	return x;
 }
 
-static void fread_u32(FILE *fp) {
+static u32 fread_u32(FILE *fp) {
 	u32 x;
 	fread(&x, sizeof x, 1, fp);
 	return x;
 }
 
-static void fread_float(FILE *fp) {
+static float fread_float(FILE *fp) {
 	float x;
 	fread(&x, sizeof x, 1, fp);
 	return x;
 }
 
-static void fread_v2(FILE *fp) {
+static v2 fread_v2(FILE *fp) {
 	v2 v;
 	fread(&v, sizeof v, 1, fp);
 	return v;
 }
 
+#if _WIN32
+static void make_directory(char const *name) {
+	_mkdir(name);
+}
+#else
+#include <sys/stat.h>
+static void make_directory(char const *name) {
+	mkdir(name, 0755);
+}
+#endif

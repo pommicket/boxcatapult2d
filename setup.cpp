@@ -13,7 +13,7 @@ static v2 setup_rand_point(void) {
 
 #define PLATFORM_MOVE_CHANCE 0.5f // chance that the platform will be a moving one
 #define PLATFORM_ROTATE_CHANCE 0.5f // chance that the platform will be a rotating one (platforms can be moving and rotating)
-static void setup_random(State *state, Setup *setup, float cost_allowed) {
+static void setup_random(Setup *setup, float cost_allowed) {
 	// how much "money" we have to spend
 	float cost_left = cost_allowed;
 	
@@ -54,16 +54,28 @@ static void setup_random(State *state, Setup *setup, float cost_allowed) {
 				cost_left -= fabsf(platform->rotate_speed) * PLATFORM_ROTATE_SPEED_COST;
 			}
 		}
-
-		platform_make_body(state, platform, setup->nplatforms - 1);
 	}
 	assert(cost_left >= 0);
 }
 
 // make this setup the active one
 static void setup_use(State *state, Setup *setup) {
+	b2World *world = state->world;
+	// get rid of old platform bodies
+	for (u32 i = 0; i < state->nplatforms; ++i) {
+		Platform *p = &state->platforms[i];
+		if (p->body)
+			world->DestroyBody(p->body);
+	}
 	memcpy(state->platforms, setup->platforms, setup->nplatforms * sizeof(Platform));
 	state->nplatforms = setup->nplatforms;
+	// create new bodies
+	for (u32 i = 0; i < state->nplatforms; ++i) {
+		Platform *p = &state->platforms[i];
+		p->body = NULL;
+		platform_make_body(state, p, i);
+	}
+	assert((u32)world->GetBodyCount() == state->nplatforms + 2); // platforms + 2 walls
 }
 
 static void setup_reset(State *state) {
@@ -129,10 +141,34 @@ static float setup_score(State *state, Setup *setup) {
 	return setup->score;
 }
 
-static void setup_write_to_file(Setup *setup, FILE *fp) {
-	u32 nplatforms = setup->nplatforms;
-	fwrite_u32(fp, nplatforms);
-	for (u32 i = 0; i < nplatforms; ++i) {
-		platform_write_to_file(&setup->platforms[i], fp);
+static bool setup_write_to_file(Setup const *setup, char const *filename) {
+	FILE *fp = fopen(filename, "wb");
+	if (fp) {
+		u32 nplatforms = setup->nplatforms;
+		fwrite_u32(fp, nplatforms);
+		for (u32 i = 0; i < nplatforms; ++i) {
+			platform_write_to_file(&setup->platforms[i], fp);
+		}
+		fclose(fp);
+		return true;
+	} else {
+		logln("Couldn't write setup to %s.", filename);
+		return false;
 	}
 }
+
+static bool setup_read_from_file(Setup *setup, char const *filename) {
+	FILE *fp = fopen(filename, "rb");
+	if (fp) {
+		u32 nplatforms = setup->nplatforms = fread_u32(fp);
+		for (u32 i = 0; i < nplatforms; ++i) {
+			platform_read_from_file(&setup->platforms[i], fp);
+		}
+		fclose(fp);
+		return true;
+	} else {
+		logln("Couldn't read setup from %s.", filename);
+		return false;
+	}
+}
+
