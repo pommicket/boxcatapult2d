@@ -173,3 +173,43 @@ static int qsort_stricmp(const void *av, const void *bv) {
 #endif
 }
 
+static void fwrite_bool(FILE *fp, bool x) {
+	fwrite(&x, sizeof x, 1, fp);
+}
+
+static void fwrite_u32(FILE *fp, u32 x) {
+	fwrite(&x, sizeof x, 1, fp);
+}
+
+static void fwrite_float(FILE *fp, float x) {
+	fwrite(&x, sizeof x, 1, fp);
+}
+
+static void fwrite_v2(FILE *fp, v2 v) {
+	fwrite(&v, sizeof v, 1, fp);
+}
+
+static void fread_bool(FILE *fp) {
+	bool x;
+	fread(&x, sizeof x, 1, fp);
+	return x;
+}
+
+static void fread_u32(FILE *fp) {
+	u32 x;
+	fread(&x, sizeof x, 1, fp);
+	return x;
+}
+
+static void fread_float(FILE *fp) {
+	float x;
+	fread(&x, sizeof x, 1, fp);
+	return x;
+}
+
+static void fread_v2(FILE *fp) {
+	v2 v;
+	fread(&v, sizeof v, 1, fp);
+	return v;
+}
+

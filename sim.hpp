@@ -128,12 +128,14 @@ typedef struct {
 typedef struct {
 	b2Body *body;
 
+
+	v2 center;
+	float radius; // half of the width of the platform
+	
 	// save the starting position and rotation of the platform so we
 	// can restore it to reset the setup
 	float start_angle;
 
-	v2 center;
-	float radius; // half of the width of the platform
 	float angle;
 
 	bool moves; // does this platform move?
@@ -161,6 +163,13 @@ typedef struct {
 #define USER_DATA_TYPE_PLATFORM ((uintptr_t)0x1)
 // indicator that this Box2D fixture is a platform
 #define USER_DATA_PLATFORM (USER_DATA_TYPE_PLATFORM << USER_DATA_TYPE_SHIFT)
+
+#define MAX_PLATFORMS 32
+typedef struct {
+	float score; // distance this setup can throw the ball
+	u32 nplatforms;
+	Platform platforms[MAX_PLATFORMS];
+} Setup;
 
 typedef struct {
 	bool initialized;
@@ -193,6 +202,7 @@ typedef struct {
 	Ball ball;
 	float furthest_ball_x_pos; // furthest distance the ball has reached
 	float stuck_time; // amount of time furthest_ball_x_pos hasn't changed for
+	float total_time; // amount of time the simulation has been running for
 
 	float bottom_y; // y-position of "floor" (if y goes below here, it's over)
 	float left_x; // y-position of left wall
@@ -203,11 +213,13 @@ typedef struct {
 	Font small_font;
 
 	Platform platform_building; // the platform the user is currently placing
-
 	float platform_thickness;
+
 	u32 nplatforms;
-#define MAX_PLATFORMS 1000
 	Platform platforms[MAX_PLATFORMS];
+
+#define GENERATION_SIZE 100
+	Setup generation[GENERATION_SIZE];
 
 	u32 tmp_mem_used; // this is not measured in bytes, but in MaxAligns 
 #define TMP_MEM_BYTES (4L<<20)

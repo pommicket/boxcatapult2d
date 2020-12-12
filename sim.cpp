@@ -1,3 +1,4 @@
+// @TODO: test read/write setups
 #include "gui.hpp"
 #ifdef _WIN32
 #include <windows.h>
@@ -39,41 +40,19 @@ static v2 b2_to_gl(State const *state, v2 box2d_coordinates) {
 #include "shaders.cpp"
 #include "platforms.cpp"
 
-// render the ball
-static void ball_render(State *state) {
-	GL *gl = &state->gl;
-	Ball *ball = &state->ball;
-	float ball_x = ball->pos.x, ball_y = ball->pos.y;
-	float ball_r = ball->radius;
-	ShaderBall *shader = &state->shader_ball;
-	
-	shader_start_using(gl, &shader->base);
-	
-	gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, state->transform.e);
-	gl->Uniform2f(shader->uniform_center, ball_x, ball_y);
-	gl->Uniform1f(shader->uniform_radius, ball_r);
-
-	glBegin(GL_QUADS);
-	glColor3f(1,1,1);
-	glVertex2f(ball_x-ball_r, ball_y-ball_r);
-	glVertex2f(ball_x-ball_r, ball_y+ball_r);
-	glVertex2f(ball_x+ball_r, ball_y+ball_r);
-	glVertex2f(ball_x+ball_r, ball_y-ball_r);
-	glEnd();
-	shader_stop_using(gl);
-}
-
 static void simulate_time(State *state, float dt) {
+	Ball *ball = &state->ball;
+	if (!ball->body) return; // we're done simulating
 	float time_step = 0.01f; // fixed time step
 	dt += state->time_residue;
 	while (dt >= time_step) {
-		Ball *ball = &state->ball;
 		b2World *world = state->world;
 
 		world->Step(time_step, 8, 3); // step using recommended parameters
 
-		if (ball->body) {
+		{ // update ball
 			state->stuck_time += time_step;
+			state->total_time += time_step;
 			b2Vec2 ball_pos = ball->body->GetPosition();
 			
 			bool reached_bottom = ball_pos.y - ball->radius < state->bottom_y; // ball reached bottom line
@@ -88,9 +67,12 @@ static void simulate_time(State *state, float dt) {
 				}
 				if (stuck)
 					state->stuck_time = max_stuck_time;
+				return; // done simulating
 			} else {
 				ball->pos = b2_to_v2(ball_pos);
-				if (ball->pos.x > state->furthest_ball_x_pos) {
+				float rounded_pos = 0.01f * roundf(ball->pos.x * 100);
+				float rounded_record = 0.01f * roundf(state->furthest_ball_x_pos * 100);
+				if (rounded_pos > rounded_record) { // only update record if centimeter reading will change
 					state->furthest_ball_x_pos = ball->pos.x;
 					state->stuck_time = 0;
 				}
@@ -137,6 +119,32 @@ static void simulate_time(State *state, float dt) {
 	state->time_residue = dt;
 }
 
+// render the ball
+static void ball_render(State *state) {
+	GL *gl = &state->gl;
+	Ball *ball = &state->ball;
+	float ball_x = ball->pos.x, ball_y = ball->pos.y;
+	float ball_r = ball->radius;
+	ShaderBall *shader = &state->shader_ball;
+	
+	shader_start_using(gl, &shader->base);
+	
+	gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, state->transform.e);
+	gl->Uniform2f(shader->uniform_center, ball_x, ball_y);
+	gl->Uniform1f(shader->uniform_radius, ball_r);
+
+	glBegin(GL_QUADS);
+	glColor3f(1,1,1);
+	glVertex2f(ball_x-ball_r, ball_y-ball_r);
+	glVertex2f(ball_x-ball_r, ball_y+ball_r);
+	glVertex2f(ball_x+ball_r, ball_y+ball_r);
+	glVertex2f(ball_x+ball_r, ball_y-ball_r);
+	glEnd();
+	shader_stop_using(gl);
+}
+
+#include "setup.cpp"
+
 static void correct_mouse_button(State *state, u8 *button) {
 	if (*button == MOUSE_LEFT) {
 		if (state->shift) {
@@ -149,44 +157,6 @@ static void correct_mouse_button(State *state, u8 *button) {
 	}
 }
 
-static void setup_reset(State *state) {
-	{ // reset ball
-		Ball *ball = &state->ball;
-		b2World *world = state->world;
-		if (ball->body)
-			world->DestroyBody(ball->body);
-
-
-		ball->radius = 0.3f;
-		ball->pos = V2(BALL_STARTING_X, 10.0f);
-
-		// create ball
-		b2BodyDef ball_def;
-		ball_def.type = b2_dynamicBody;
-		ball_def.position.Set(ball->pos.x, ball->pos.y);
-		b2Body *ball_body = ball->body = world->CreateBody(&ball_def);
-		
-		b2CircleShape ball_shape;
-		ball_shape.m_radius = ball->radius;
-
-		b2FixtureDef ball_fixture;
-		ball_fixture.shape = &ball_shape;
-		ball_fixture.density = 1.0f;
-		ball_fixture.friction = 0.3f;
-		ball_fixture.restitution = 0.6f; // bounciness
-
-		ball_body->CreateFixture(&ball_fixture);
-
-	}
-	for (Platform *p = state->platforms, *end = p + state->nplatforms; p != end; ++p) { // reset platforms
-		p->angle = p->start_angle;
-		if (p->moves) p->center = p->move_p1;
-		p->body->SetTransform(v2_to_b2(p->center), p->angle);
-	}
-	state->setting_move_p2 = false;
-	state->furthest_ball_x_pos = 0;
-	state->stuck_time = 0;
-}
 
 #ifdef __cplusplus
 extern "C"
@@ -310,17 +280,12 @@ void sim_frame(Frame *frame) {
 		left_wall_body->CreateFixture(&left_wall_shape, 0);
 
 		
-		{ // initialize platforms
-		#if 0
-			Platform *p = &state->platforms[0];
-			p->start_angle  = 0;
-			p->radius = 0.5f;
-			p->center = V2(1.5f, 1.5f);
-			p->color = 0xFF00FFFF;
-			platform_make_body(state, p);
-			state->nplatforms = (u32)(p - state->platforms + 1);
-		#endif
+		for (size_t i = 0; i < arr_count(state->generation); ++i) {
+			setup_random(state, &state->generation[i], 50);
+			printf("%f \n",setup_score(state, &state->generation[i]));
+		}
 
+		{
 			Platform *b = &state->platform_building;
 			b->radius = 1.5f;
 			b->color = 0xFF00FF7F;
@@ -345,6 +310,25 @@ void sim_frame(Frame *frame) {
 	shaders_reload_if_necessary(state);
 #endif
 
+
+	Font *font = &state->font;
+	Font *small_font = &state->small_font;
+	Platform *mouse_platform = platform_at_mouse_pos(state);
+
+	if (state->simulating) {
+		// simulate physics
+		float dt = state->dt;
+		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
+		simulate_time(state, dt);
+		if (keys_pressed[KEY_SPACE]) {
+			state->building = true;
+			state->simulating = false;
+			keys_pressed[KEY_SPACE] = 0;
+			setup_reset(state);
+		}
+	}
+
+
 	{
 		float half_height = 10.0f;
 		float half_width = half_height * state->win_width / state->win_height;
@@ -367,23 +351,6 @@ void sim_frame(Frame *frame) {
 		);
 
 		state->mouse_pos = v3_xy(m4_mul_v3(state->inv_transform, mouse_gl_coords));
-	}
-
-	Font *font = &state->font;
-	Font *small_font = &state->small_font;
-	Platform *mouse_platform = platform_at_mouse_pos(state);
-
-	if (state->simulating) {
-		// simulate physics
-		float dt = state->dt;
-		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
-		simulate_time(state, dt);
-		if (keys_pressed[KEY_SPACE]) {
-			state->building = true;
-			state->simulating = false;
-			keys_pressed[KEY_SPACE] = 0;
-			setup_reset(state);
-		}
 	}
 
 	if (state->building) {
@@ -480,9 +447,12 @@ void sim_frame(Frame *frame) {
 				platform_building->move_speed += speed_change_amount;
 		}
 
-		platform_building->rotate_speed = clampf(platform_building->rotate_speed, -3, +3);
-		platform_building->move_speed = clampf(platform_building->move_speed, 0.1f, 5.0f);
-		platform_building->radius = clampf(platform_building->radius, 0.2f, 5.0f);
+		platform_building->rotate_speed = clampf(platform_building->rotate_speed,
+			PLATFORM_ROTATE_SPEED_MIN, PLATFORM_ROTATE_SPEED_MAX);
+		platform_building->move_speed = clampf(platform_building->move_speed,
+			PLATFORM_MOVE_SPEED_MIN, PLATFORM_MOVE_SPEED_MAX);
+		platform_building->radius = clampf(platform_building->radius,
+			PLATFORM_RADIUS_MIN, PLATFORM_RADIUS_MAX);
 		platform_building->angle = fmodf(platform_building->angle, TAUf);
 
 		for (u32 i = 0; i < input->nmouse_presses; ++i) {
@@ -502,7 +472,7 @@ void sim_frame(Frame *frame) {
 						Platform *p = &state->platforms[state->nplatforms++];
 						*p = *platform_building;
 						p->color |= 0xFF; // set alpha to 255
-						platform_make_body(state, p);
+						platform_make_body(state, p, state->nplatforms - 1);
 						state->setting_move_p2 = false;
 						platform_building->moves = false;
 					}
@@ -627,6 +597,12 @@ void sim_frame(Frame *frame) {
 		text_render(state, small_font, text, pos);
 		// stuck time
 		snprintf(text, sizeof text - 1, "Last record: %.1fs ago", state->stuck_time);
+		size = text_get_size(state, small_font, text);
+		pos.x = 1 - size.x;
+		pos.y += size.y * 1.5f;
+		text_render(state, small_font, text, pos);
+		// total time
+		snprintf(text, sizeof text - 1, "Total time: %.1fs", state->total_time);
 		size = text_get_size(state, small_font, text);
 		pos.x = 1 - size.x;
 		pos.y += size.y * 1.5f;

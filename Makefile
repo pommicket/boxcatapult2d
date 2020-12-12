@@ -1,6 +1,6 @@
 WARNINGS=-Wall -Wextra -Wshadow -Wconversion -Wpedantic -pedantic -std=gnu++11 -Wno-unused-function -Wimplicit-fallthrough
 LIBS=-ldl `pkg-config --libs --cflags sdl2 gl` -l:libbox2d.a
-DEBUG_CFLAGS=$(CFLAGS) $(WARNINGS) $(LIBS) -DDEBUG -O0 -g
+DEBUG_CFLAGS=$(CFLAGS) $(WARNINGS) $(LIBS) -DDEBUG -O0 -g3
 obj/debug: physics obj/sim.so obj
 	touch obj/debug
 physics: *.[ch]*

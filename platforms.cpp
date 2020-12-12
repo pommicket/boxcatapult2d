@@ -1,3 +1,15 @@
+#define PLATFORM_RADIUS_MIN 0.2f
+#define PLATFORM_RADIUS_MAX 5.0f
+#define PLATFORM_MOVE_SPEED_MIN 0.1f
+#define PLATFORM_MOVE_SPEED_MAX 5.0f
+#define PLATFORM_ROTATE_SPEED_MIN -3.0f
+#define PLATFORM_ROTATE_SPEED_MAX +3.0f
+
+// additional cost for each additional meter of platform radius
+#define PLATFORM_RADIUS_COST 1.0f
+#define PLATFORM_MOVE_SPEED_COST 1.0f
+#define PLATFORM_ROTATE_SPEED_COST 1.0f
+
 // how far right could any part of this platform possibly go?
 static float platform_rightmost_x(Platform const *platform) {
 	float angle;
@@ -139,21 +151,8 @@ static void platforms_render(State *state, Platform *platforms, u32 nplatforms) 
 	}
 }
 
-static uintptr_t platform_to_user_data(State *state, Platform *platform) {
-	return USER_DATA_PLATFORM | (uintptr_t)(platform - state->platforms);
-}
-
-static Platform *platform_from_user_data(State *state, uintptr_t user_data) {
-	if ((user_data & USER_DATA_TYPE) == USER_DATA_PLATFORM) {
-		uintptr_t index = user_data & USER_DATA_INDEX;
-		return &state->platforms[index];
-	} else {
-		return NULL;
-	}
-}
-
 // sets platform->body to a new Box2D body.
-static void platform_make_body(State *state, Platform *platform) {
+static void platform_make_body(State *state, Platform *platform, u32 index) {
 	b2World *world = state->world;
 
 	float radius = platform->radius;
@@ -175,18 +174,12 @@ static void platform_make_body(State *state, Platform *platform) {
 	b2FixtureDef fixture;
 	fixture.shape = &shape;
 	fixture.friction = 0.5f;
-	fixture.userData.pointer = platform_to_user_data(state, platform);
+	fixture.userData.pointer = USER_DATA_PLATFORM | index;
 
 	body->CreateFixture(&fixture);
-	if (platform->moves) {
-		float speed = platform->move_speed;
-		v2 p1 = platform->move_p1, p2 = platform->move_p2;
-		v2 direction = v2_normalize(v2_sub(p2, p1));
-		v2 velocity = v2_scale(direction, speed);
-		body->SetLinearVelocity(v2_to_b2(velocity));
-	} 
-	body->SetAngularVelocity(platform->rotate_speed);
-
+	
+	// velocity and rotate speed will be set when setup_reset is called
+	
 	platform->body = body;
 }
 
@@ -196,8 +189,15 @@ public:
 		this->state = state_;
 	}
 	bool ReportFixture(b2Fixture *fixture) {
-		platform = platform_from_user_data(state, fixture->GetUserData().pointer);
-		return !platform; // if we haven't found a platform, keep going
+		uintptr_t userdata = fixture->GetUserData().pointer;
+		if (userdata & USER_DATA_PLATFORM) {
+			u32 index = (u32)(userdata & ~USER_DATA_PLATFORM);
+			assert(index < state->nplatforms);
+			platform = &state->platforms[index];
+			return false; // we can stop now
+		} else {
+			return true; // keep going
+		}
 	}
 	Platform *platform = NULL;
 	State *state = NULL;
@@ -227,7 +227,7 @@ static void platform_delete(State *state, Platform *platform) {
 		// set this platform to last platform
 		platforms[index] = platforms[nplatforms-1];
 		memset(&platforms[nplatforms-1], 0, sizeof(Platform));
-		platforms[index].body->GetFixtureList()->GetUserData().pointer = platform_to_user_data(state, &platforms[index]);
+		platforms[index].body->GetFixtureList()->GetUserData().pointer = index | USER_DATA_PLATFORM;
 	} else {
 		// platform is at end of array; don't need to do anything special
 		memset(&platforms[index], 0, sizeof(Platform));
@@ -237,11 +237,11 @@ static void platform_delete(State *state, Platform *platform) {
 }
 
 static float platform_cost(Platform const *platform) {
-	float cost = platform->radius;
+	float cost = platform->radius * PLATFORM_RADIUS_COST;
 	if (platform->moves)
-		cost += platform->move_speed;
+		cost += platform->move_speed * PLATFORM_MOVE_SPEED_COST;
 	if (platform->rotates)
-		cost += platform->rotate_speed;
+		cost += fabsf(platform->rotate_speed) * PLATFORM_ROTATE_SPEED_COST;
 	return cost;
 }
 
@@ -251,4 +251,45 @@ static float platforms_cost(Platform const *platforms, u32 nplatforms) {
 		total_cost += platform_cost(&platforms[i]);
 	}
 	return total_cost;
+}
+
+static void platform_write_to_file(Platform const *p, FILE *fp) {
+	fwrite_float(fp, p->radius);
+	fwrite_float(fp, p->start_angle);
+	fwrite_u32(fp, p->color);
+
+	u8 flags = (u8)(p->moves * 1) | (u8)(p->rotates * 2);
+	fwrite_u8(fp, flags);
+	if (p->moves) {
+		fwrite_float(fp, p->move_speed);
+		fwrite_v2(fp, p->move_p1);
+		fwrite_v2(fp, p->move_p2);
+	} else {
+		fwrite_v2(fp, p->center);
+	}
+	if (p->rotates) {
+		fwrite_float(fp, p->rotate_speed);
+	}
+}
+
+static void platform_read_from_file(Platform const *p, FILE *fp) {
+	p->radius = fread_float(fp);
+	p->start_angle = fread_float(fp);
+	p->color = fread_u32(fp);
+
+	u8 flags = fread_u8(fp);
+	p->moves = (flags & 1) != 0;
+	p->rotates = (flags & 2) != 0;
+
+	if (p->moves) {
+		p->move_speed = fread_float(fp);
+		p->move_p1 = fread_v2(fp);
+		p->move_p2 = fread_v2(fp);
+	} else {
+		p->center = fread_v2(fp);
+	}
+
+	if (p->rotates) {
+		p->rotate_speed = fread_float(fp);
+	}
 }
