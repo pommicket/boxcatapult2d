@@ -419,14 +419,7 @@ void sim_frame(Frame *frame) {
 			keys_pressed[KEY_SPACE] = 0;
 			setup_reset(state);
 		}
-		if (keys_pressed[KEY_ESCAPE]) {
-			// back to evolve menu
-			state->simulating = false;
-			state->evolve_menu = true;
-			keys_pressed[KEY_ESCAPE] = 0;
-		}
 	}
-
 
 	{
 		float half_height = 10.0f;
@@ -868,6 +861,21 @@ void sim_frame(Frame *frame) {
 			text_render(state, small_font, text, pos);
 		}
 
+	}
+
+	if (state->simulating || state->building) {
+		if (keys_pressed[KEY_ESCAPE]) {
+			// back to evolve menu
+			if (ball->body) {
+				// destroy ball if needed
+				state->world->DestroyBody(ball->body);
+				ball->body = NULL;
+			}
+			state->simulating = false;
+			state->building = false;
+			state->evolve_menu = true;
+			keys_pressed[KEY_ESCAPE] = 0;
+		}
 	}
 
 	#if DEBUG
