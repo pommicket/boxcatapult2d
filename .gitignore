@@ -18,3 +18,6 @@ box2d
 .vs*
 setups
 *.b2s
+box2d-src
+*.tar.gz
+*.zip

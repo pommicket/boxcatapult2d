@@ -44,8 +44,8 @@ sudo apt install libsdl2-dev
 You need the latest version of Box2D. The versions in Debian stable/testing aren't new enough.
 You can install it with:
 ```bash
-git clone https://github.com/erincatto/box2d/
-cd box2d
+git clone https://github.com/erincatto/box2d/ box2d-src
+cd box2d-src
 mkdir -p build
 cd build
 cmake -DBOX2D_BUILD_TESTBED=False ..
@@ -63,8 +63,8 @@ and copy the folder `SDL2-something\include` there too, renaming it to `SDL2`.
 Next, install `Box2D` (you will need `git` in your PATH):
 ```bash
 vcvarsall x64
-git clone https://github.com/erincatto/box2d/
-cd box2d
+git clone https://github.com/erincatto/box2d/ box2d-src
+cd box2d-src
 xcopy /s /i include\box2d ..\box2d
 mkdir build
 cd build
