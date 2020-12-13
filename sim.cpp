@@ -1,4 +1,3 @@
-// @TODO: test read/write setups
 #include "gui.hpp"
 #ifdef _WIN32
 #include <windows.h>
