@@ -1,3 +1,6 @@
+#if _WIN32
+#include <direct.h>
+#endif
 #ifndef arr_count
 #define arr_count(a) (sizeof (a) / sizeof *(a))
 #endif

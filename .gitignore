@@ -12,6 +12,7 @@ TAGS
 *.xcf
 *.lib
 *.exp
+*.res
 SDL2
 box2d
 .vs*
