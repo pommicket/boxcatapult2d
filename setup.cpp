@@ -168,6 +168,7 @@ static float setup_score(State *state, Setup *setup) {
 		simulate_time(state, 0.1f);
 	}
 	setup->score = ball->pos.x - starting_line;
+	setup->total_time = state->total_time;
 	return setup->score;
 }
 

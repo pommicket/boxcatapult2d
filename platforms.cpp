@@ -57,6 +57,11 @@ static Rect platform_bounding_box(Platform const *platform) {
 	float y1 = platform_lowest_coordinate(platform, true);
 	float x2 = platform_highest_coordinate(platform, false);
 	float y2 = platform_highest_coordinate(platform, true);
+	bool any_nan = (isnan(x1) || isnan(y1) || isnan(x2) || isnan(y2)); // this used to be a problem, but it should be fixed now. this is here just in case.
+	assert(!any_nan);
+	if (any_nan) {
+		return rect4(-1000, -1000, 1000, 1000);
+	}
 	return rect4(x1, y1, x2, y2);
 }
 

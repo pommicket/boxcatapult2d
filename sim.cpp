@@ -60,7 +60,9 @@ static void simulate_time(State *state, float dt) {
 			state->stuck_time += time_step;
 			state->total_time += time_step;
 			b2Vec2 ball_pos = ball->body->GetPosition();
-			
+
+			assert(!(isnan(ball_pos.x) || isnan(ball_pos.y))); // there used to be a problem with NaN but it should be fixed now
+
 			bool reached_bottom = ball_pos.y - ball->radius < state->bottom_y; // ball reached bottom line
 			float max_stuck_time = 10;
 			bool stuck = state->stuck_time > max_stuck_time; // ball hasn't gotten any further in a while. it's over
@@ -175,26 +177,13 @@ static void start_evolution(State *state) {
 }
 
 // make sure you call start_evolution before you call this function for the first time
-static void simulate_generation(State *state) {
-	for (size_t i = 0; i < GENERATION_SIZE; ++i) {
-		// create new generation from TOP_KEPT
-		Setup *setup = &state->setups[i + TOP_KEPT];
-		*setup = state->setups[rand() % TOP_KEPT]; // select one of the top setups to mutate from
-		++setup->mutations;
-		switch (i / 20) {
-		case 0: setup_mutate(state, setup, 0.05f); break; // 5% mutation rate group
-		case 1: setup_mutate(state, setup, 0.10f); break; // 10% mutation rate group
-		case 2: setup_mutate(state, setup, 0.20f); break; // 20% mutation rate group
-		case 3: setup_mutate(state, setup, 0.30f); break; // 30% mutation rate group
-		case 4: // completely random group
-			memset(setup, 0, sizeof *setup);
-			setup_random(state, setup);
-			break;
-		}
-		setup_score(state, setup);
-	}
+static void start_generation(State *state) {
+	state->scoring_next = 0;
+	state->evolving = true;
+}
 
-
+static void finish_generation(State *state) {
+	setups_sort(state);
 	for (size_t i = 0; i < TOP_KEPT; ++i) {
 		Setup *setup = &state->setups[i];
 		char filename[64] = {0};
@@ -206,8 +195,33 @@ static void simulate_generation(State *state) {
 		setup_write_to_file(setup, filename);
 	}
 	
-	setups_sort(state);
 	++state->generation;
+}
+
+// returns true if this is the last one in the generation
+static bool score_one(State *state) {
+	u32 i = state->scoring_next++;
+	// create new generation from TOP_KEPT
+	Setup *setup = &state->setups[i + TOP_KEPT];
+	*setup = state->setups[rand() % TOP_KEPT]; // select one of the top setups to mutate from
+	++setup->mutations;
+	switch (i / 20) {
+	case 0: setup_mutate(state, setup, 0.05f); break; // 5% mutation rate group
+	case 1: setup_mutate(state, setup, 0.10f); break; // 10% mutation rate group
+	case 2: setup_mutate(state, setup, 0.20f); break; // 20% mutation rate group
+	case 3: setup_mutate(state, setup, 0.30f); break; // 30% mutation rate group
+	case 4: // completely random group
+		memset(setup, 0, sizeof *setup);
+		setup_random(state, setup);
+		break;
+	}
+	setup_score(state, setup);
+	if (state->scoring_next >= GENERATION_SIZE) {
+		finish_generation(state);
+		state->scoring_next = 0;
+		return true;
+	}
+	return false;
 }
 
 #ifdef __cplusplus
@@ -613,33 +627,47 @@ void sim_frame(Frame *frame) {
 	} else if (state->evolve_menu) {
 		// handle input
 		if (!state->evolving && keys_pressed[KEY_SPACE]) {
-			simulate_generation(state);
+			start_generation(state);
+			state->run_one_generation = true;
 		}
 
-		bool just_started = false;
 		if (keys_pressed[KEY_P]) {
-			state->evolving = !state->evolving;
-			if (state->evolving) just_started = true;
+			if (state->evolving) {
+				state->evolving = false;
+			} else {
+				start_generation(state);
+				state->run_one_generation = false;
+			}
 		}
 
 		char text[128] = {};
 		// show generation
-		snprintf(text, sizeof text - 1, "Generation %llu (%s)", (ullong)state->generation, state->evolving ? "evolving" : "stopped");
+		snprintf(text, sizeof text - 1, "Generation %llu", (ullong)state->generation);
 		v2 size = text_get_size(state, font, text);
-		v2 pos = V2(0, 0.98f);
+		v2 pos = V2(-size.x * 0.5f, 0.98f);
 		pos.y -= size.y * 1.5f;
-		pos.x -= size.x * 0.5f;
 		if (state->evolving)	
 			glColor3f(0.5f,1,0.5f);
 		else
 			glColor3f(1,1,1);
 		text_render(state, font, text, pos);
 
+		if (state->evolving) {
+			snprintf(text, sizeof text - 1, "(running %u/%u)", 
+				(uint)state->scoring_next, (uint)GENERATION_SIZE);
+		} else {
+			snprintf(text, sizeof text - 1, "(stopped)");
+		}
+		size = text_get_size(state, font, text);
+		pos.y -= size.y * 1.5f;
+		pos.x = -size.x * 0.5f;
+		text_render(state, font, text, pos);
+
 		pos.y -= 0.1f;
 		for (int i = 0; i < 9; ++i) {
 			Setup *setup = &state->setups[i];
-			snprintf(text, sizeof text - 1, "%d. %.2f m (mutated %llu times)",
-				i+1, setup->score, (ullong)setup->mutations);
+			snprintf(text, sizeof text - 1, "%d. %.2fm in %.1fs (mutated %llu times)",
+				i+1, setup->score, setup->total_time, (ullong)setup->mutations);
 			size = text_get_size(state, font, text);
 			pos.x = -size.x * 0.5f;
 			pos.y -= size.y * 1.5f;
@@ -663,22 +691,19 @@ void sim_frame(Frame *frame) {
 		}
 
 		gl_color1f(0.8f);
-		snprintf(text, sizeof text - 1, "Press space to run a single generation.");
-		size = text_get_size(state, font, text);
-		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
-		text_render(state, font, text, pos);
+		if (!state->evolving) {
+			snprintf(text, sizeof text - 1, "Press space to run a single generation.");
+			size = text_get_size(state, font, text);
+			pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
+			text_render(state, font, text, pos);
+		}
 
-		snprintf(text, sizeof text - 1, "Press P to %s running generations.", state->evolving ? "stop" : "start");
+		snprintf(text, sizeof text - 1, "Press P to %s running generations automatically.", state->evolving ? "stop" : "start");
 		size = text_get_size(state, font, text);
 		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
 		text_render(state, font, text, pos);
 
 		snprintf(text, sizeof text - 1, "Press a number key/click to view the corresponding catapult.");
-		size = text_get_size(state, font, text);
-		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
-		text_render(state, font, text, pos);
-
-		snprintf(text, sizeof text - 1, "(It may take several seconds to simulate each generation)");
 		size = text_get_size(state, font, text);
 		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
 		text_render(state, font, text, pos);
@@ -693,8 +718,16 @@ void sim_frame(Frame *frame) {
 		}
 		
 		if (state->evolving) {
-			if (!just_started) // take one frame to update; change (stopped) to (evolving), and change "Press P to start..." to "Press P to stop..."
-				simulate_generation(state); // one generation per frame
+			// score some setups!
+			struct timespec start_time = time_get();
+			do {
+				bool new_generation = score_one(state);
+				if (new_generation) {
+					if (state->run_one_generation) {
+						state->evolving = false;
+					}
+				}
+			} while (timespec_sub(time_get(), start_time) < 0.02f); // after 20ms, stop.
 		}
 
 	} else {

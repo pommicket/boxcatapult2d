@@ -17,6 +17,32 @@ static struct timespec time_last_modified(char const *filename) {
 #endif
 }
 
+// get the current time. this should only really be used for
+// time intervals, since there's no significance to the absolute number.
+static struct timespec time_get(void) {
+	struct timespec ts = {};
+#if _WIN32
+	FILETIME ft;
+	ULARGE_INTEGER bigint;
+	ULONGLONG t;
+	GetSystemTimeAsFileTime(&ft);
+	bigint.LowPart = ft.dwLowDateTime;
+	bigint.HighPart = ft.dwHighDateTime;
+	t = bigint.QuadPart;
+	ts.tv_sec = t / 10000000;
+	ts.tv_nsec = (t % 10000000) * 100;
+#else
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
+	return ts;
+}
+
+// subtract timespecs. the return value is seconds.
+static double timespec_sub(struct timespec a, struct timespec b) {
+	return (double)(a.tv_sec - b.tv_sec)
+		+ 0.000000001 * (double)(a.tv_nsec - b.tv_nsec);
+}
+
 static int timespec_cmp(struct timespec a, struct timespec b) {
 	if (a.tv_sec  > b.tv_sec)  return 1;
 	if (a.tv_sec  < b.tv_sec)  return -1;

@@ -167,6 +167,7 @@ typedef struct {
 #define MAX_PLATFORMS 32
 typedef struct {
 	float score; // distance this setup can throw the ball
+	float total_time; // time it took to finish
 	u64 mutations;
 	u32 nplatforms;
 	Platform platforms[MAX_PLATFORMS];
@@ -203,6 +204,9 @@ typedef struct {
 	bool simulating; // are we simulating the world's physics?
 	bool evolve_menu; // is the evolve menu shown?
 	bool evolving; // are we simulating generations?
+	bool run_one_generation; // only run one generation, then stop.
+
+	u32 scoring_next; // which of this generation's setups we are scoring next
 
 	u64 generation; // which generation we are on
 

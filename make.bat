@@ -5,7 +5,7 @@ if _%VCVARS% == _ (
 )
 if not exist obj mkdir obj
 
-SET CFLAGS=/nologo /W3 /D_CRT_SECURE_NO_WARNINGS /I SDL2/include /I box2d SDL2/lib/x64/SDL2main.lib SDL2/lib/x64/SDL2.lib opengl32.lib box2d.lib /MD
+SET CFLAGS=/nologo /W4 /wd4505 /wd4706 /D_CRT_SECURE_NO_WARNINGS /I SDL2/include /I box2d SDL2/lib/x64/SDL2main.lib SDL2/lib/x64/SDL2.lib opengl32.lib box2d.lib /MD
 rc /nologo boxcatapult2d.rc
 if _%1 == _ (
 	cl main.cpp /DDEBUG /DEBUG /Zi %CFLAGS% /Fo:obj/urbs /Fe:boxcatapult2d boxcatapult2d.res
