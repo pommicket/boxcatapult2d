@@ -82,6 +82,12 @@ static float randf(void) {
 	return (float)rand() / (float)((ulong)RAND_MAX + 1);
 }
 
+static float rand_gauss(void) {
+	// https://en.wikipedia.org/wiki/Normal_distribution#Generating_values_from_normal_distribution
+	float U = randf(), V = randf();
+	return sqrtf(-2 * logf(U)) * cosf(TAUf * V);
+}
+
 static u32 rand_u32(void) {
 	return ((u32)rand() & 0xfff)
 		| ((u32)rand() & 0xfff) << 12
@@ -693,6 +699,14 @@ static void gl_quad(float x1, float y1, float x2, float y2) {
 	glVertex2f(x2, y1);
 	glVertex2f(x2, y2);
 	glVertex2f(x1, y2);
+}
+
+static float rects_intersect(Rect r1, Rect r2) {
+	if (r1.pos.x >= r2.pos.x + r2.size.x) return false; // r1 is to the right of r2
+	if (r2.pos.x >= r1.pos.x + r1.size.x) return false; // r2 is to the right of r1
+	if (r1.pos.y >= r2.pos.y + r2.size.y) return false; // r1 is above r2
+	if (r2.pos.y >= r1.pos.y + r1.size.y) return false; // r2 is above r1
+	return true;
 }
 #endif
 

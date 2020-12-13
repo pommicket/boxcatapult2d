@@ -167,6 +167,7 @@ typedef struct {
 #define MAX_PLATFORMS 32
 typedef struct {
 	float score; // distance this setup can throw the ball
+	bool mutated;
 	u32 nplatforms;
 	Platform platforms[MAX_PLATFORMS];
 } Setup;
@@ -218,8 +219,9 @@ typedef struct {
 	u32 nplatforms;
 	Platform platforms[MAX_PLATFORMS];
 
-#define GENERATION_SIZE 1000
-	Setup generation[GENERATION_SIZE];
+#define GENERATION_SIZE 100
+#define TOP_KEPT 10 // keep top this many setups after every generation
+	Setup setups[TOP_KEPT + GENERATION_SIZE];
 
 	u32 tmp_mem_used; // this is not measured in bytes, but in MaxAligns 
 #define TMP_MEM_BYTES (4L<<20)

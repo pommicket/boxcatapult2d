@@ -1,5 +1,5 @@
-#define PLATFORM_RADIUS_MIN 0.2f
-#define PLATFORM_RADIUS_MAX 5.0f
+#define PLATFORM_RADIUS_MIN 0.5f
+#define PLATFORM_RADIUS_MAX 2.0f
 #define PLATFORM_MOVE_SPEED_MIN 0.1f
 #define PLATFORM_MOVE_SPEED_MAX 5.0f
 #define PLATFORM_ROTATE_SPEED_MIN -3.0f
@@ -10,26 +10,58 @@
 #define PLATFORM_MOVE_SPEED_COST 1.0f
 #define PLATFORM_ROTATE_SPEED_COST 1.0f
 
-// how far right could any part of this platform possibly go?
-static float platform_rightmost_x(Platform const *platform) {
+// some horrible code to figure out the rightmost x coordinate or the topmost y coordinate a platform can reach
+static float platform_highest_coordinate(Platform const *platform, bool y) {
 	float angle;
 	if (platform->rotates)
-		angle = 0; // for rotating platforms, the maximum x coordinate is achieved when the platform has an angle of 0
+		angle = y ? HALF_PIf : 0;
 	else
-		angle = platform->angle;
-	float x_past_center = platform->radius * fabsf(cosf(angle)); // width of platform to the right of the center
+		angle = platform->start_angle;
+	float past_center = platform->radius * fabsf((y ? sinf : cosf)(angle)); // width/height of platform to the right of the center
 	v2 center;
 	if (platform->moves) {
 		v2 p1 = platform->move_p1, p2 = platform->move_p2;
 		// pick the point with the higher x coordinate
-		if (p1.x > p2.x)
+		if ((y ? p1.y : p1.x) > (y ? p2.y : p2.x))
 			center = p1;
 		else
 			center = p2;
 	} else {
 		center = platform->center;
 	}
-	return center.x + x_past_center;
+	return (y ? center.y : center.x) + past_center;
+}
+
+static float platform_lowest_coordinate(Platform const *platform, bool y) {
+	float angle;
+	if (platform->rotates)
+		angle = y ? HALF_PIf : 0;
+	else
+		angle = platform->start_angle;
+	float before_center = platform->radius * -fabsf((y ? sinf : cosf)(angle));
+	v2 center;
+	if (platform->moves) {
+		v2 p1 = platform->move_p1, p2 = platform->move_p2;
+		if ((y ? p1.y : p1.x) < (y ? p2.y : p2.x))
+			center = p1;
+		else
+			center = p2;
+	} else {
+		center = platform->center;
+	}
+	return (y ? center.y : center.x) + before_center;
+}
+
+static Rect platform_bounding_box(Platform const *platform) {
+	float x1 = platform_lowest_coordinate(platform, false);
+	float y1 = platform_lowest_coordinate(platform, true);
+	float x2 = platform_highest_coordinate(platform, false);
+	float y2 = platform_highest_coordinate(platform, true);
+	return rect4(x1, y1, x2, y2);
+}
+
+static float platform_rightmost_x(Platform const *platform) {
+	return platform_highest_coordinate(platform, false);
 }
 
 // where the ball's distance traveled should be measured from
@@ -292,5 +324,101 @@ static void platform_read_from_file(Platform *p, FILE *fp) {
 
 	if (p->rotates) {
 		p->rotate_speed = fread_float(fp);
+	}
+}
+
+static v2 setup_rand_point(void);
+
+#define PLATFORM_MOVE_CHANCE 0.5f // chance that the platform will be a moving one
+#define PLATFORM_ROTATE_CHANCE 0.5f // chance that the platform will be a rotating one (platforms can be moving and rotating)
+
+static void platform_random(Platform *platform) {
+	platform->color = rand_u32() | 0xFF;
+	platform->radius = rand_uniform(PLATFORM_RADIUS_MIN, PLATFORM_RADIUS_MAX);
+	platform->center = setup_rand_point();
+	platform->start_angle = rand_uniform(0, PIf);
+
+	if (randf() < PLATFORM_MOVE_CHANCE) {
+		platform->moves = true;
+		platform->move_speed = rand_uniform(PLATFORM_MOVE_SPEED_MIN, PLATFORM_MOVE_SPEED_MAX);
+		platform->move_p1 = platform->center;
+		platform->move_p2 = v2_add(platform->move_p1, v2_scale(v2_rand_unit(), 2 * rand_gauss()));
+	}
+
+	if (randf() < PLATFORM_ROTATE_CHANCE) {
+		platform->rotates = true;
+		platform->rotate_speed = rand_uniform(0.1f, PLATFORM_ROTATE_SPEED_MAX);
+		if (rand() % 2)
+			platform->rotate_speed = -platform->rotate_speed; // clockwise
+	}
+}
+
+static void mutate_position(v2 *p) {
+	if (randf() < 0.2f)
+		*p = setup_rand_point(); // randomize completely
+	else
+		*p = v2_add(*p, v2_scale(V2(rand_gauss(), rand_gauss()), 0.1f));
+}
+
+static void platform_mutate(State *state, Setup *setup, Platform *platform) {
+	Platform original = *platform;
+	int i;
+	int max_attempts = 100;
+	for (i = 0; i < max_attempts; ++i) { // make at most max_attempts attempts to mutate the platform
+		*platform = original;
+
+		if (randf() < 0.2f) {
+			// completely randomize platform
+			platform_random(platform);
+		} else {
+			// partially randomize platform
+#define FEATURE_MUTATE_RATE 0.3f
+			if (randf() < FEATURE_MUTATE_RATE) {
+				platform->start_angle += 0.3f * rand_gauss(); // mutate angle
+				platform->start_angle = fmodf(platform->start_angle, TAUf);
+			}
+			if (platform->moves) {
+				if (randf() < FEATURE_MUTATE_RATE) {
+					platform->move_speed += 0.1f * rand_gauss(); // mutate move speed
+					platform->move_speed = clampf(platform->move_speed, PLATFORM_MOVE_SPEED_MIN, PLATFORM_MOVE_SPEED_MAX);
+				}
+				if (randf() < FEATURE_MUTATE_RATE)
+					mutate_position(&platform->move_p1); // mutate p1
+				if (randf() < FEATURE_MUTATE_RATE)
+					mutate_position(&platform->move_p2); // mutate p2
+			} else if (randf() < FEATURE_MUTATE_RATE) {
+				// mutate position
+				mutate_position(&platform->center);
+			}
+			if (platform->rotates) {
+				if (randf() < FEATURE_MUTATE_RATE) {
+					// mutate rotate speed
+					platform->rotate_speed += 0.3f * rand_gauss();
+					platform->rotate_speed = clampf(platform->rotate_speed, PLATFORM_ROTATE_SPEED_MIN, PLATFORM_ROTATE_SPEED_MAX);
+				}
+			}
+			if (randf() < FEATURE_MUTATE_RATE) {
+				// mutate radius
+				platform->radius += 0.1f * rand_gauss();
+				platform->radius = clampf(platform->radius, PLATFORM_RADIUS_MIN, PLATFORM_RADIUS_MAX);
+			}
+		}
+		
+		Rect bbox = platform_bounding_box(platform);
+		bool intersects_any = false;
+		for (Platform *platform2 = setup->platforms, *end = platform2 + setup->nplatforms;
+			platform2 != end; ++platform2) {
+			if (platform != platform2) {
+				if (rects_intersect(bbox, platform_bounding_box(platform2))) {
+					intersects_any = true;
+					break;
+				}
+			}
+		}
+		if (!intersects_any && bbox.pos.x > state->left_x) break; // doesn't intersect anything; we're good.
+	}
+	if (i == max_attempts) {
+		// we tried so many times but we couldn't mutate the platform ):
+		*platform = original; // give up on mutation
 	}
 }

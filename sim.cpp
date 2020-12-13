@@ -170,13 +170,18 @@ void sim_frame(Frame *frame) {
 		frame->close = true;
 		return;
 	}
-	State *state = (State *)frame->memory;
-	Ball *ball = &state->ball;
 	i32 width = frame->width, height = frame->height;
 	Input *input = &frame->input;
-	GL *gl = &state->gl;
 	maybe_unused u8 *keys_pressed = input->keys_pressed;
 	maybe_unused bool *keys_down = input->keys_down;
+	State *state = (State *)frame->memory;
+#if DEBUG
+	if (state->magic_number != MAGIC_NUMBER || keys_pressed[KEY_F5]) {
+		memset(state, 0, sizeof *state);
+	}
+#endif
+	Ball *ball = &state->ball;
+	GL *gl = &state->gl;
 	state->ctrl = input->keys_down[KEY_LCTRL] || input->keys_down[KEY_RCTRL];
 	state->shift = input->keys_down[KEY_LSHIFT] || input->keys_down[KEY_RSHIFT];
 
@@ -194,6 +199,7 @@ void sim_frame(Frame *frame) {
 	state->aspect_ratio = state->win_width / state->win_height;
 	state->dt = (float)frame->dt;
 	
+	if (width == 0 || height == 0) return;
 
 	// set up GL
 	glEnable(GL_BLEND);
@@ -204,11 +210,6 @@ void sim_frame(Frame *frame) {
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 	
-#if DEBUG
-	if (state->magic_number != MAGIC_NUMBER || keys_pressed[KEY_F5]) {
-		memset(state, 0, sizeof *state);
-	}
-#endif
 
 	if (!state->initialized) {
 		logln("Initializing...");
@@ -281,34 +282,67 @@ void sim_frame(Frame *frame) {
 		left_wall_shape.SetAsBox(0.5f, 1000);
 		left_wall_body->CreateFixture(&left_wall_shape, 0);
 
-		
-		#if 1
+		for (size_t i = 0; i < arr_count(state->setups); ++i) {
+			// randomize initial setups
+			Setup *setup = &state->setups[i];
+			setup_random(state, setup);
+			setup_score(state, setup);
+		}
+
+		qsort(state->setups, arr_count(state->setups), sizeof(Setup), setup_compare_scores);
+
+		for (size_t i = 0; i < TOP_KEPT; ++i) {
+			printf("%zu. %f\n", i, state->setups[i].score);
+		}
+
+		for (int g = 0; g < 100; ++g) {
+			printf("---Generation %d---\n",g);
+			for (size_t i = 0; i < GENERATION_SIZE; ++i) {
+				// create new generation from TOP_KEPT
+				Setup *setup = &state->setups[i + TOP_KEPT];
+				*setup = state->setups[rand() % TOP_KEPT]; // select one of the top setups to mutate from
+				setup->mutated = true;
+				switch (i / 20) {
+				case 0: setup_mutate(state, setup, 0.05f); break; // 5% mutation rate group
+				case 1: setup_mutate(state, setup, 0.10f); break; // 10% mutation rate group
+				case 2: setup_mutate(state, setup, 0.20f); break; // 20% mutation rate group
+				case 3: setup_mutate(state, setup, 0.30f); break; // 30% mutation rate group
+				case 4: memset(setup, 0, sizeof *setup); setup_random(state, setup); break; // completely random group
+				}
+				setup_score(state, setup);
+			}
+
+			qsort(state->setups, arr_count(state->setups), sizeof(Setup), setup_compare_scores);
+
+			for (size_t i = 0; i < TOP_KEPT; ++i) {
+				Setup *setup = &state->setups[i];
+				char filename[64] = {0};
+				snprintf(filename, sizeof filename - 1, "setups/%03zu.b2s", i);
+				printf("%zu. %f%s\n", i, setup->score, setup->mutated ? " (mutated)" : "");
+				setup_write_to_file(setup, filename);
+			}
+
+			setup_use(state, &state->setups[0]);
+		}
+
+		#if 0
 		Setup *best_setup = &state->generation[0];
 		for (size_t i = 0; i < GENERATION_SIZE; ++i) {
 			Setup *setup = &state->generation[i];
-			setup_random(setup, 50);
+			setup_random(state, setup);
 			char filename[64] = {0};
 			snprintf(filename, sizeof filename-1, "setups/%03zu.b2s", i);
 			setup_write_to_file(setup, filename);
 			setup_score(state, setup);
-			logln("Setup %zu: %.2f m", i, setup->score);
+			printf("Setup %zu: %.2f m\n", i, setup->score);
 			if (setup->score > best_setup->score) {
 				best_setup = setup;
 			}
 		}
-		logln("Best: setup %ld", (long)(best_setup - state->generation));
+		printf("Best: setup %ld\n", (long)(best_setup - state->generation));
 		setup_use(state, best_setup);
 		assert(state->nplatforms == best_setup->nplatforms);
 		#endif
-
-	#if 0
-		Setup *setup = &state->generation[0];
-		//setup_random(state, setup, 50);
-		//setup_write_to_file(setup, "setups/test.b2s");
-		setup_read_from_file(setup, "setups/test.b2s");
-		setup_use(state, setup);
-	#endif
-
 
 		{
 			Platform *b = &state->platform_building;
@@ -488,6 +522,7 @@ void sim_frame(Frame *frame) {
 				if (mouse_platform) {
 					// edit platform
 					*platform_building = *mouse_platform;
+					platform_building->body = NULL;
 					platform_delete(state, mouse_platform);
 					platform_building->color = (platform_building->color & 0xFFFFFF00) | 0x7F;
 				} else {
@@ -522,6 +557,22 @@ void sim_frame(Frame *frame) {
 	if (state->building) {
 		// turn platform under mouse blue
 		if (mouse_platform) mouse_platform->color = 0x007FFFFF;
+
+	#if 0
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+		glMultMatrixf(state->transform.e);	
+
+		glBegin(GL_QUADS);
+		glColor4f(1, 1, 1, 0.5f);
+		rect_render(platform_bounding_box(&state->platform_building));
+		for (u32 i = 0; i < state->nplatforms; ++i) {
+			rect_render(platform_bounding_box(&state->platforms[i]));
+		}
+		glEnd();
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+	#endif
 	}
 	platforms_render(state, state->platforms, state->nplatforms);
 	if (state->building) {
@@ -606,12 +657,14 @@ void sim_frame(Frame *frame) {
 
 	}
 
+#if 0
 	{ // cost
 		char text[64];
 		snprintf(text, sizeof text - 1, "Cost: %.1f", platforms_cost(state->platforms, state->nplatforms));
 		glColor3f(1, 1, 0.5f);
 		text_render(state, font, text, V2(-0.95f, -0.95f));
 	}
+#endif
 
 	{ // details in the bottom right
 		char text[64] = {0};

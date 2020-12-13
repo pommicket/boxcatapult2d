@@ -2,7 +2,7 @@
 #define SETUP_MIN_X 1.0f
 #define SETUP_MAX_X 10.0f
 #define SETUP_MIN_Y 1.0f
-#define SETUP_MAX_Y 10.0f
+#define SETUP_MAX_Y 15.0f
 
 static v2 setup_rand_point(void) {
 	return V2(
@@ -10,9 +10,7 @@ static v2 setup_rand_point(void) {
 		rand_uniform(SETUP_MIN_Y, SETUP_MAX_Y)
 	);
 }
-
-#define PLATFORM_MOVE_CHANCE 0.5f // chance that the platform will be a moving one
-#define PLATFORM_ROTATE_CHANCE 0.5f // chance that the platform will be a rotating one (platforms can be moving and rotating)
+#if 0
 static void setup_random(Setup *setup, float cost_allowed) {
 	// how much "money" we have to spend
 	float cost_left = cost_allowed;
@@ -56,6 +54,38 @@ static void setup_random(Setup *setup, float cost_allowed) {
 		}
 	}
 	assert(cost_left >= 0);
+}
+#endif
+
+static void setup_random(State *state, Setup *setup) {
+	u32 i, j, t;
+	u32 const max_failed_attempts = 100;
+	Platform *platforms = setup->platforms;
+	for (i = 0; i < MAX_PLATFORMS; ++i) {
+		for (t = 0; t < max_failed_attempts; ++t) {
+			Platform *platform = &platforms[i];
+			memset(platform, 0, sizeof *platform);
+			platform_random(platform);
+			Rect bbox = platform_bounding_box(platform);
+			for (j = 0; j < i; ++j) {
+				Rect bbox_other = platform_bounding_box(&platforms[j]);
+				if (rects_intersect(bbox, bbox_other)) {
+					break;
+				}
+			}
+			if (bbox.pos.x > state->left_x // ensure that platform is to the right of left wall
+				&& j == i) {
+				// we successfully placed a platform!
+				break;
+			}
+		}
+		if (t == max_failed_attempts) {
+			// if we failed enough attempts to make a non-intersecting platform, give up
+			break;
+		}
+	}
+
+	setup->nplatforms = i;
 }
 
 // make this setup the active one
@@ -172,3 +202,21 @@ static bool setup_read_from_file(Setup *setup, char const *filename) {
 	}
 }
 
+// meant for use with qsort, to sort by descending score
+static int setup_compare_scores(void const *a_void, void const *b_void) {
+	Setup const *a = (Setup const *)a_void, *b = (Setup const *)b_void;
+	if (a->score > b->score) {
+		return -1;
+	} else if (a->score < b->score) {
+		return +1;
+	}
+	return 0;
+}
+
+static void setup_mutate(State *state, Setup *setup, float mutation_rate) {
+	for (Platform *platform = setup->platforms, *end = platform + setup->nplatforms;
+		platform != end; ++platform) {
+		if (randf() < mutation_rate)
+			platform_mutate(state, setup, platform);
+	}
+}
