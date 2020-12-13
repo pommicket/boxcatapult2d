@@ -265,7 +265,7 @@ void sim_frame(Frame *frame) {
 
 	if (!state->initialized) {
 		logln("Initializing...");
-		strcpy(frame->title, "physics");
+		strcpy(frame->title, "Boxcatapult2D");
 
 		void (*(*get_gl_proc)(char const *))(void) = frame->get_gl_proc;
 
@@ -313,6 +313,7 @@ void sim_frame(Frame *frame) {
 
 		text_font_load(state, &state->font, "assets/font.ttf", 36.0f);
 		text_font_load(state, &state->small_font, "assets/font.ttf", 18.0f);
+		text_font_load(state, &state->large_font, "assets/font.ttf", 72.0f);
 
 		b2Vec2 gravity(0, -9.81f);
 		b2World *world = state->world = new b2World(gravity);
@@ -336,6 +337,7 @@ void sim_frame(Frame *frame) {
 
 
 		#if 0
+		// make a bunch of random setups and pick the best one
 		Setup *best_setup = &state->generation[0];
 		for (size_t i = 0; i < GENERATION_SIZE; ++i) {
 			Setup *setup = &state->generation[i];
@@ -362,8 +364,8 @@ void sim_frame(Frame *frame) {
 
 		state->pan = BALL_STARTING_POS;
 
-		start_evolution(state);
-		
+		state->start_menu = true;
+		input->nkey_presses = 0; // discard any key presses on the first frame
 		state->initialized = true;
 	#if DEBUG
 		state->magic_number = MAGIC_NUMBER;
@@ -377,6 +379,8 @@ void sim_frame(Frame *frame) {
 
 	Font *font = &state->font;
 	Font *small_font = &state->small_font;
+	Font *large_font = &state->large_font;
+
 	Platform *mouse_platform = platform_at_mouse_pos(state);
 
 	if (state->simulating) {
@@ -561,7 +565,52 @@ void sim_frame(Frame *frame) {
 	}
 
 
-	if (state->evolve_menu) {
+	if (state->start_menu) {
+		if (state->pressed_any_key_to_begin) {
+			// if any key was pressed last frame, show evolve menu now
+			state->evolve_menu = true;
+			state->start_menu = false;
+			start_evolution(state);
+		}
+
+		if (input->nkey_presses) {
+			state->pressed_any_key_to_begin = true;
+		}
+
+		glColor3f(1,0,1);
+		char text[128] = {};
+		snprintf(text, sizeof text - 1, "Boxcatapult2D");
+		v2 size = text_get_size(state, large_font, text);
+		v2 pos = V2(-size.x * 0.5f, 0.98f);
+		pos.y -= size.y;
+		text_render(state, large_font, text, pos);
+		
+		{ // platform underline
+			ShaderPlatform *shader = &state->shader_platform;
+			float thickness = 0.005f;
+			float radius = size.x * 0.5f + 0.05f;
+			shader_start_using(gl, &shader->base);
+			gl->Uniform1f(shader->uniform_thickness, thickness);
+			gl->UniformMatrix4fv(shader->uniform_transform, 1, GL_FALSE, m4_identity.e);
+			glBegin(GL_QUADS);
+			float e1x = -radius, e1y = pos.y - 0.01f;
+			float e2x = +radius, e2y = e1y;
+			gl->VertexAttrib2f(shader->vertex_p1, e1x, e1y);
+			gl->VertexAttrib2f(shader->vertex_p2, e2x, e2y);
+			glVertex2f(e1x, e1y - thickness * 0.5f);
+			glVertex2f(e2x, e2y - thickness * 0.5f);
+			glVertex2f(e2x, e2y + thickness * 0.5f);
+			glVertex2f(e1x, e1y + thickness * 0.5f);
+			glEnd();
+			shader_stop_using(gl);
+		}
+		
+		glColor3f(1,1,1);
+		snprintf(text, sizeof text - 1, "%s", state->pressed_any_key_to_begin ? "Loading..." : "Press any key to begin.");
+		size = text_get_size(state, font, text);
+		pos = V2(-size.x * 0.5f, -size.y * 0.5f);
+		text_render(state, font, text, pos);
+	} else if (state->evolve_menu) {
 		// handle input
 		if (!state->evolving && keys_pressed[KEY_SPACE]) {
 			simulate_generation(state);

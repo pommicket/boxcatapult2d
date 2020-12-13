@@ -263,6 +263,8 @@ int main(void) {
 			case SDL_KEYDOWN: {
 				Key key = keycode_to_key(event.key.keysym.sym);
 				++input->keys_pressed[key];
+				if (input->nkey_presses < MAX_KEY_PRESSES_PER_FRAME)
+					++input->nkey_presses;
 			} break;
 			case SDL_KEYUP: {
 				Key key = keycode_to_key(event.key.keysym.sym);

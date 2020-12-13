@@ -196,6 +196,8 @@ typedef struct {
 	ShaderPlatform shader_platform;
 	ShaderBall shader_ball;
 
+	bool start_menu; // "press any key to begin"
+	bool pressed_any_key_to_begin; // we need to delay beginning by a frame to show "Loading..."
 	bool building; // is the user building a setup?
 	bool setting_move_p2; // is the user setting the move_p2 of the platform they're placing?
 	bool simulating; // are we simulating the world's physics?
@@ -218,6 +220,7 @@ typedef struct {
 
 	Font font;
 	Font small_font;
+	Font large_font;
 
 	Platform platform_building; // the platform the user is currently placing
 	float platform_thickness;

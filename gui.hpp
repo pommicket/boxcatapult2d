@@ -55,6 +55,8 @@ typedef struct {
 	u16 nmouse_releases;
 #define MAX_MOUSE_RELEASES_PER_FRAME MAX_MOUSE_PRESSES_PER_FRAME 
 	MousePress mouse_releases[MAX_MOUSE_RELEASES_PER_FRAME];
+#define MAX_KEY_PRESSES_PER_FRAME 256
+	u16 nkey_presses;
 
 	i32 mouse_x, mouse_y; // (+y = down)
 	bool shift, ctrl;
