@@ -26,7 +26,10 @@ typedef union {
 } MaxAlign;
 #endif
 
+typedef long long llong;
+
 typedef unsigned long ulong;
+typedef unsigned long long ullong;
 typedef unsigned uint;
 
 typedef uint8_t u8;
@@ -45,7 +48,7 @@ typedef int64_t i64;
 #define I8_MAX  0x7f
 #define I16_MAX 0x7fff
 #define I32_MAX 0x7fffffff
-#define I64_Max 0x7fffffffffffffff
+#define I64_MAX 0x7fffffffffffffff
 
 #ifdef __GNUC__
 #define no_warn_start _Pragma("GCC diagnostic push") \

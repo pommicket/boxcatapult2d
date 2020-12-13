@@ -22,6 +22,7 @@
 #include "text.cpp"
 
 #define BALL_STARTING_X 3.0f
+#define BALL_STARTING_POS V2(BALL_STARTING_X, 10.0f)
 
 static b2Vec2 v2_to_b2(v2 v) {
 	return b2Vec2(v.x, v.y);
@@ -35,6 +36,11 @@ static v2 b2_to_v2(b2Vec2 v) {
 static v2 b2_to_gl(State const *state, v2 box2d_coordinates) {
 	v3 v = m4_mul_v3(state->transform, v3_from_v2(box2d_coordinates));
 	return V2(v.x, v.y);
+}
+
+static v2 pixels_to_gl_coords(State *state, u32 x, u32 y) {
+	return V2((float)x / state->win_width * 2 - 1,
+		(1 - (float)y / state->win_height) * 2 - 1);
 }
 
 #include "shaders.cpp"
@@ -157,6 +163,52 @@ static void correct_mouse_button(State *state, u8 *button) {
 	}
 }
 
+static void start_evolution(State *state) {
+	for (size_t i = 0; i < arr_count(state->setups); ++i) {
+		// randomize initial setups
+		Setup *setup = &state->setups[i];
+		setup_random(state, setup);
+		setup_score(state, setup);
+	}
+	setups_sort(state);
+	state->evolve_menu = true;
+}
+
+// make sure you call start_evolution before you call this function for the first time
+static void simulate_generation(State *state) {
+	for (size_t i = 0; i < GENERATION_SIZE; ++i) {
+		// create new generation from TOP_KEPT
+		Setup *setup = &state->setups[i + TOP_KEPT];
+		*setup = state->setups[rand() % TOP_KEPT]; // select one of the top setups to mutate from
+		++setup->mutations;
+		switch (i / 20) {
+		case 0: setup_mutate(state, setup, 0.05f); break; // 5% mutation rate group
+		case 1: setup_mutate(state, setup, 0.10f); break; // 10% mutation rate group
+		case 2: setup_mutate(state, setup, 0.20f); break; // 20% mutation rate group
+		case 3: setup_mutate(state, setup, 0.30f); break; // 30% mutation rate group
+		case 4: // completely random group
+			memset(setup, 0, sizeof *setup);
+			setup_random(state, setup);
+			break;
+		}
+		setup_score(state, setup);
+	}
+
+
+	for (size_t i = 0; i < TOP_KEPT; ++i) {
+		Setup *setup = &state->setups[i];
+		char filename[64] = {0};
+		snprintf(filename, sizeof filename - 1, "setups/%03zu.b2s", i);
+	#if 0
+		printf("%zu. %f - mutated %llu times\n", 
+			i, setup->score, (ullong)setup->mutations);
+	#endif
+		setup_write_to_file(setup, filename);
+	}
+	
+	setups_sort(state);
+	++state->generation;
+}
 
 #ifdef __cplusplus
 extern "C"
@@ -282,48 +334,6 @@ void sim_frame(Frame *frame) {
 		left_wall_shape.SetAsBox(0.5f, 1000);
 		left_wall_body->CreateFixture(&left_wall_shape, 0);
 
-		for (size_t i = 0; i < arr_count(state->setups); ++i) {
-			// randomize initial setups
-			Setup *setup = &state->setups[i];
-			setup_random(state, setup);
-			setup_score(state, setup);
-		}
-
-		qsort(state->setups, arr_count(state->setups), sizeof(Setup), setup_compare_scores);
-
-		for (size_t i = 0; i < TOP_KEPT; ++i) {
-			printf("%zu. %f\n", i, state->setups[i].score);
-		}
-
-		for (int g = 0; g < 100; ++g) {
-			printf("---Generation %d---\n",g);
-			for (size_t i = 0; i < GENERATION_SIZE; ++i) {
-				// create new generation from TOP_KEPT
-				Setup *setup = &state->setups[i + TOP_KEPT];
-				*setup = state->setups[rand() % TOP_KEPT]; // select one of the top setups to mutate from
-				setup->mutated = true;
-				switch (i / 20) {
-				case 0: setup_mutate(state, setup, 0.05f); break; // 5% mutation rate group
-				case 1: setup_mutate(state, setup, 0.10f); break; // 10% mutation rate group
-				case 2: setup_mutate(state, setup, 0.20f); break; // 20% mutation rate group
-				case 3: setup_mutate(state, setup, 0.30f); break; // 30% mutation rate group
-				case 4: memset(setup, 0, sizeof *setup); setup_random(state, setup); break; // completely random group
-				}
-				setup_score(state, setup);
-			}
-
-			qsort(state->setups, arr_count(state->setups), sizeof(Setup), setup_compare_scores);
-
-			for (size_t i = 0; i < TOP_KEPT; ++i) {
-				Setup *setup = &state->setups[i];
-				char filename[64] = {0};
-				snprintf(filename, sizeof filename - 1, "setups/%03zu.b2s", i);
-				printf("%zu. %f%s\n", i, setup->score, setup->mutated ? " (mutated)" : "");
-				setup_write_to_file(setup, filename);
-			}
-
-			setup_use(state, &state->setups[0]);
-		}
 
 		#if 0
 		Setup *best_setup = &state->generation[0];
@@ -350,19 +360,14 @@ void sim_frame(Frame *frame) {
 			b->color = 0xFF00FF7F;
 		}
 
-		setup_reset(state);
+		state->pan = BALL_STARTING_POS;
 
-		state->pan = ball->pos;
-		state->building = true;
-			
+		start_evolution(state);
+		
 		state->initialized = true;
 	#if DEBUG
 		state->magic_number = MAGIC_NUMBER;
 	#endif
-	}
-	if (keys_pressed[KEY_ESCAPE]) {
-		frame->close = true;
-		return;
 	}
 
 #if DEBUG
@@ -380,10 +385,17 @@ void sim_frame(Frame *frame) {
 		if (dt > 100) dt = 100; // prevent floating-point problems for very large dt's
 		simulate_time(state, dt);
 		if (keys_pressed[KEY_SPACE]) {
+			// edit this setup
 			state->building = true;
 			state->simulating = false;
 			keys_pressed[KEY_SPACE] = 0;
 			setup_reset(state);
+		}
+		if (keys_pressed[KEY_ESCAPE]) {
+			// back to evolve menu
+			state->simulating = false;
+			state->evolve_menu = true;
+			keys_pressed[KEY_ESCAPE] = 0;
 		}
 	}
 
@@ -403,12 +415,8 @@ void sim_frame(Frame *frame) {
 	}
 
 	{ // calculate mouse position in Box2D coordinates
-		v3 mouse_gl_coords = V3(
-			(float)input->mouse_x / state->win_width * 2 - 1,
-			(1 - (float)input->mouse_y / state->win_height) * 2 - 1,
-			0
-		);
-
+		state->mouse_pos_gl = pixels_to_gl_coords(state, input->mouse_x, input->mouse_y);
+		v3 mouse_gl_coords = v3_from_v2(state->mouse_pos_gl);
 		state->mouse_pos = v3_xy(m4_mul_v3(state->inv_transform, mouse_gl_coords));
 	}
 
@@ -553,139 +561,221 @@ void sim_frame(Frame *frame) {
 	}
 
 
-	u32 prev_mouse_platform_color = mouse_platform ? mouse_platform->color : 0;
-	if (state->building) {
-		// turn platform under mouse blue
-		if (mouse_platform) mouse_platform->color = 0x007FFFFF;
-
-	#if 0
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
-		glMultMatrixf(state->transform.e);	
-
-		glBegin(GL_QUADS);
-		glColor4f(1, 1, 1, 0.5f);
-		rect_render(platform_bounding_box(&state->platform_building));
-		for (u32 i = 0; i < state->nplatforms; ++i) {
-			rect_render(platform_bounding_box(&state->platforms[i]));
+	if (state->evolve_menu) {
+		// handle input
+		if (!state->evolving && keys_pressed[KEY_SPACE]) {
+			simulate_generation(state);
 		}
-		glEnd();
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
-	#endif
-	}
-	platforms_render(state, state->platforms, state->nplatforms);
-	if (state->building) {
-		if (mouse_platform) {
-			mouse_platform->color = prev_mouse_platform_color;
-		} else {
-			platforms_render(state, &state->platform_building, 1);
-		#if 1
-			{ // show rightmost x coordinate of platform
-				glBegin(GL_LINES);
-				v2 line_pos = V2(platform_rightmost_x(&state->platform_building), 0);
-				float x = b2_to_gl(state, line_pos).x;
-				glVertex2f(x, -1);
-				glVertex2f(x, +1);
-				glEnd();
+
+		bool just_started = false;
+		if (keys_pressed[KEY_P]) {
+			state->evolving = !state->evolving;
+			if (state->evolving) just_started = true;
+		}
+
+		char text[128] = {};
+		// show generation
+		snprintf(text, sizeof text - 1, "Generation %llu (%s)", (ullong)state->generation, state->evolving ? "evolving" : "stopped");
+		v2 size = text_get_size(state, font, text);
+		v2 pos = V2(0, 0.98f);
+		pos.y -= size.y * 1.5f;
+		pos.x -= size.x * 0.5f;
+		if (state->evolving)	
+			glColor3f(0.5f,1,0.5f);
+		else
+			glColor3f(1,1,1);
+		text_render(state, font, text, pos);
+
+		pos.y -= 0.1f;
+		for (int i = 0; i < 9; ++i) {
+			Setup *setup = &state->setups[i];
+			snprintf(text, sizeof text - 1, "%d. %.2f m (mutated %llu times)",
+				i+1, setup->score, (ullong)setup->mutations);
+			size = text_get_size(state, font, text);
+			pos.x = -size.x * 0.5f;
+			pos.y -= size.y * 1.5f;
+
+			Rect r = rect(pos, size);
+			if (rect_contains_point(r, state->mouse_pos_gl))
+				glColor3f(0.5f, 0.5f, 1);
+			else
+				glColor3f(1.0f, 0.8f, 1.0f);
+
+			for (MousePress *press = input->mouse_presses, *end = press + input->nmouse_presses; press != end; ++press) {
+				if (rect_contains_point(r, pixels_to_gl_coords(state, press->x, press->y))) {
+					// clicked on this setup
+					setup_use(state, &state->setups[i]);
+					state->evolve_menu = false;
+					state->evolving = false;
+					state->simulating = true;
+				}
 			}
-		#endif
+			text_render(state, font, text, pos);
 		}
-	}
-	ball_render(state);
 
-	{
-		float bottom_y = m4_mul_v3(state->transform, V3(0, state->bottom_y, 0)).y;
-		float left_x = m4_mul_v3(state->transform, V3(state->left_x, 0, 0)).x;
+		gl_color1f(0.8f);
+		snprintf(text, sizeof text - 1, "Press space to run a single generation.");
+		size = text_get_size(state, font, text);
+		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
+		text_render(state, font, text, pos);
 
-		glBegin(GL_LINES);
-		glColor3f(1,0,0);
-		// render floor line
-		glVertex2f(-1, bottom_y);
-		glVertex2f(+1, bottom_y);
+		snprintf(text, sizeof text - 1, "Press P to %s running generations.", state->evolving ? "stop" : "start");
+		size = text_get_size(state, font, text);
+		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
+		text_render(state, font, text, pos);
 
-		// render left wall line
-		glColor3f(0.5f,0.5f,0.5f);
-		glVertex2f(left_x, bottom_y);
-		glVertex2f(left_x, +1);
-		glEnd();
+		snprintf(text, sizeof text - 1, "Press a number key/click to view the corresponding catapult.");
+		size = text_get_size(state, font, text);
+		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
+		text_render(state, font, text, pos);
 
-		glBegin(GL_QUADS);
-		// floor area
-		glColor4f(1,0,0,0.2f);
-		glVertex2f(-1, bottom_y);
-		glVertex2f(-1, -1);
-		glVertex2f(+1, -1);
-		glVertex2f(+1, bottom_y);
-		// left wall area
-		glColor4f(0.5f, 0.5f, 0.5f, 0.2f);
-		glVertex2f(-1, +1);
-		glVertex2f(left_x, +1);
-		glVertex2f(left_x, bottom_y);
-		glVertex2f(-1, bottom_y);
-		glEnd();
+		snprintf(text, sizeof text - 1, "(It may take several seconds to simulate each generation)");
+		size = text_get_size(state, font, text);
+		pos.x = -size.x * 0.5f; pos.y -= size.y * 1.5f;
+		text_render(state, font, text, pos);
 
-		if (state->simulating) { // starting line & distance traveled
-			float starting_line = platforms_starting_line(state->platforms, state->nplatforms);
-			float starting_line_gl = b2_to_gl(state, V2(starting_line, 0)).x;
+		for (int i = 0; i < 9; ++i) {
+			if (keys_pressed[KEY_1 + i]) {
+				setup_use(state, &state->setups[i]);
+				state->evolve_menu = false;
+				state->evolving = false;
+				state->simulating = true;
+			}
+		}
+		
+		if (state->evolving) {
+			if (!just_started) // take one frame to update; change (stopped) to (evolving), and change "Press P to start..." to "Press P to stop..."
+				simulate_generation(state); // one generation per frame
+		}
+
+	} else {
+		u32 prev_mouse_platform_color = mouse_platform ? mouse_platform->color : 0;
+		if (state->building) {
+			// turn platform under mouse blue
+			if (mouse_platform) mouse_platform->color = 0x007FFFFF;
+		}
+		platforms_render(state, state->platforms, state->nplatforms);
+		if (state->building) {
+			if (mouse_platform) {
+				mouse_platform->color = prev_mouse_platform_color;
+			} else {
+				platforms_render(state, &state->platform_building, 1);
+			#if 1
+				{ // show rightmost x coordinate of platform
+					glBegin(GL_LINES);
+					v2 line_pos = V2(platform_rightmost_x(&state->platform_building), 0);
+					float x = b2_to_gl(state, line_pos).x;
+					glVertex2f(x, -1);
+					glVertex2f(x, +1);
+					glEnd();
+				}
+			#endif
+			}
+		}
+
+		ball_render(state);
+
+		{
+			float bottom_y = m4_mul_v3(state->transform, V3(0, state->bottom_y, 0)).y;
+			float left_x = m4_mul_v3(state->transform, V3(state->left_x, 0, 0)).x;
+
 			glBegin(GL_LINES);
-			glColor3f(1,1,0);
-			glVertex2f(starting_line_gl, bottom_y);
-			glVertex2f(starting_line_gl, +1);
+			glColor3f(1,0,0);
+			// render floor line
+			glVertex2f(-1, bottom_y);
+			glVertex2f(+1, bottom_y);
+
+			// render left wall line
+			glColor3f(0.5f,0.5f,0.5f);
+			glVertex2f(left_x, bottom_y);
+			glVertex2f(left_x, +1);
 			glEnd();
 
-			char dist_text[64] = {0};
-			if (ball->body)
-				glColor4f(0.8f,0.8f,0.8f,0.8f); // still going
-			else
-				glColor4f(0.5f,1,0.5f,1.0f); // done
-			snprintf(dist_text, sizeof dist_text - 1, "Distance: %.2f m", ball->pos.x - starting_line);
-			v2 dist_size = text_get_size(state, font, dist_text);
+			glBegin(GL_QUADS);
+			// floor area
+			glColor4f(1,0,0,0.2f);
+			glVertex2f(-1, bottom_y);
+			glVertex2f(-1, -1);
+			glVertex2f(+1, -1);
+			glVertex2f(+1, bottom_y);
+			// left wall area
+			glColor4f(0.5f, 0.5f, 0.5f, 0.2f);
+			glVertex2f(-1, +1);
+			glVertex2f(left_x, +1);
+			glVertex2f(left_x, bottom_y);
+			glVertex2f(-1, bottom_y);
+			glEnd();
 
-			char best_text[64] = {0};
-			snprintf(best_text, sizeof best_text - 1, "Best distance: %.2f m", state->furthest_ball_x_pos - starting_line);
-			v2 best_size = text_get_size(state, font, best_text);
+			if (state->simulating) { // starting line & distance traveled
+				float starting_line = platforms_starting_line(state->platforms, state->nplatforms);
+				float starting_line_gl = b2_to_gl(state, V2(starting_line, 0)).x;
+				glBegin(GL_LINES);
+				glColor3f(1,1,0);
+				glVertex2f(starting_line_gl, bottom_y);
+				glVertex2f(starting_line_gl, +1);
+				glEnd();
+
+				char dist_text[64] = {0};
+				if (ball->body)
+					glColor4f(0.8f,0.8f,0.8f,0.8f); // still going
+				else
+					glColor4f(0.5f,1,0.5f,1.0f); // done
+				snprintf(dist_text, sizeof dist_text - 1, "Distance: %.2f m", ball->pos.x - starting_line);
+				v2 dist_size = text_get_size(state, font, dist_text);
+
+				char best_text[64] = {0};
+				snprintf(best_text, sizeof best_text - 1, "Best distance: %.2f m", state->furthest_ball_x_pos - starting_line);
+				v2 best_size = text_get_size(state, font, best_text);
 
 
-			v2 pos = V2(0.98f - maxf(dist_size.x, best_size.x), 0.98f);
-			pos.y -= dist_size.y;
-			text_render(state, font, dist_text, pos);
-			pos.y -= best_size.y;
-			text_render(state, font, best_text, pos);
+				v2 pos = V2(0.98f - maxf(dist_size.x, best_size.x), 0.98f);
+				pos.y -= dist_size.y;
+				text_render(state, font, dist_text, pos);
+				pos.y -= best_size.y;
+				text_render(state, font, best_text, pos);
+				
+				if (!ball->body) {
+					// done simulating, show instructions for what to do next
+					char text1[64] = {}, text2[64] = {};
+					glColor3f(1,1,1);
+					snprintf(text1, sizeof text1-1, "Press escape to go back to evolution.");
+					snprintf(text2, sizeof text2-1, "Press space to edit this catapult.");
+					v2 size1 = text_get_size(state, font, text1);
+					v2 size2 = text_get_size(state, font, text2);
+					pos = V2(-size1.x * 0.5f, -(size1.y + size2.y) * 1.5f * 0.5f);
+					pos.y -= size1.y * 1.5f;
+					text_render(state, font, text1, pos);
+					pos.x = -size2.x * 0.5f;
+					pos.y -= size2.y * 1.5f;
+					text_render(state, font, text2, pos);
+				}
+
+			}
 
 		}
 
-	}
+		{ // details in the bottom right
+			char text[64] = {0};
+			glColor3f(0.5f,0.5f,0.5f);
+			// position of ball
+			snprintf(text, sizeof text - 1, "(%.2f, %.2f)", ball->pos.x, ball->pos.y);
+			v2 size = text_get_size(state, small_font, text);
+			v2 pos = V2(1 - size.x, -1 + size.y);
+			text_render(state, small_font, text, pos);
+			// stuck time
+			snprintf(text, sizeof text - 1, "Last record: %.1fs ago", state->stuck_time);
+			size = text_get_size(state, small_font, text);
+			pos.x = 1 - size.x;
+			pos.y += size.y * 1.5f;
+			text_render(state, small_font, text, pos);
+			// total time
+			snprintf(text, sizeof text - 1, "Total time: %.1fs", state->total_time);
+			size = text_get_size(state, small_font, text);
+			pos.x = 1 - size.x;
+			pos.y += size.y * 1.5f;
+			text_render(state, small_font, text, pos);
+		}
 
-#if 0
-	{ // cost
-		char text[64];
-		snprintf(text, sizeof text - 1, "Cost: %.1f", platforms_cost(state->platforms, state->nplatforms));
-		glColor3f(1, 1, 0.5f);
-		text_render(state, font, text, V2(-0.95f, -0.95f));
-	}
-#endif
-
-	{ // details in the bottom right
-		char text[64] = {0};
-		glColor3f(0.5f,0.5f,0.5f);
-		// position of ball
-		snprintf(text, sizeof text - 1, "(%.2f, %.2f)", ball->pos.x, ball->pos.y);
-		v2 size = text_get_size(state, small_font, text);
-		v2 pos = V2(1 - size.x, -1 + size.y);
-		text_render(state, small_font, text, pos);
-		// stuck time
-		snprintf(text, sizeof text - 1, "Last record: %.1fs ago", state->stuck_time);
-		size = text_get_size(state, small_font, text);
-		pos.x = 1 - size.x;
-		pos.y += size.y * 1.5f;
-		text_render(state, small_font, text, pos);
-		// total time
-		snprintf(text, sizeof text - 1, "Total time: %.1fs", state->total_time);
-		size = text_get_size(state, small_font, text);
-		pos.x = 1 - size.x;
-		pos.y += size.y * 1.5f;
-		text_render(state, small_font, text, pos);
 	}
 
 	#if DEBUG

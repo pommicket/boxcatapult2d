@@ -88,26 +88,6 @@ static void setup_random(State *state, Setup *setup) {
 	setup->nplatforms = i;
 }
 
-// make this setup the active one
-static void setup_use(State *state, Setup *setup) {
-	b2World *world = state->world;
-	// get rid of old platform bodies
-	for (u32 i = 0; i < state->nplatforms; ++i) {
-		Platform *p = &state->platforms[i];
-		if (p->body)
-			world->DestroyBody(p->body);
-	}
-	memcpy(state->platforms, setup->platforms, setup->nplatforms * sizeof(Platform));
-	state->nplatforms = setup->nplatforms;
-	// create new bodies
-	for (u32 i = 0; i < state->nplatforms; ++i) {
-		Platform *p = &state->platforms[i];
-		p->body = NULL;
-		platform_make_body(state, p, i);
-	}
-	assert((u32)world->GetBodyCount() == state->nplatforms + 2); // platforms + 2 walls
-}
-
 static void setup_reset(State *state) {
 	{ // reset ball
 		Ball *ball = &state->ball;
@@ -117,7 +97,7 @@ static void setup_reset(State *state) {
 
 
 		ball->radius = 0.3f;
-		ball->pos = V2(BALL_STARTING_X, 10.0f);
+		ball->pos = BALL_STARTING_POS;
 
 		// create ball
 		b2BodyDef ball_def;
@@ -159,9 +139,29 @@ static void setup_reset(State *state) {
 	state->time_residue = 0;
 }
 
+// make this setup the active one
+static void setup_use(State *state, Setup *setup) {
+	b2World *world = state->world;
+	// get rid of old platform bodies
+	for (u32 i = 0; i < state->nplatforms; ++i) {
+		Platform *p = &state->platforms[i];
+		if (p->body)
+			world->DestroyBody(p->body);
+	}
+	memcpy(state->platforms, setup->platforms, setup->nplatforms * sizeof(Platform));
+	state->nplatforms = setup->nplatforms;
+	// create new bodies
+	for (u32 i = 0; i < state->nplatforms; ++i) {
+		Platform *p = &state->platforms[i];
+		p->body = NULL;
+		platform_make_body(state, p, i);
+	}
+	assert((u32)world->GetBodyCount() == state->nplatforms + 2); // platforms + 2 walls
+	setup_reset(state);
+}
+
 static float setup_score(State *state, Setup *setup) {
 	setup_use(state, setup);
-	setup_reset(state);
 	Ball *ball = &state->ball;
 	float starting_line = platforms_starting_line(setup->platforms, setup->nplatforms);
 	while (ball->body) {
@@ -219,4 +219,9 @@ static void setup_mutate(State *state, Setup *setup, float mutation_rate) {
 		if (randf() < mutation_rate)
 			platform_mutate(state, setup, platform);
 	}
+}
+
+// sort setups to put best ones at the start
+static void setups_sort(State *state) {
+	qsort(state->setups, arr_count(state->setups), sizeof(Setup), setup_compare_scores);
 }

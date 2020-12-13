@@ -701,6 +701,12 @@ static void gl_quad(float x1, float y1, float x2, float y2) {
 	glVertex2f(x1, y2);
 }
 
+// returns average of red green and blue components of color
+static float rgba_brightness(u32 color) {
+	u8 r = (u8)(color >> 24), g = (u8)(color >> 16), b = (u8)(color >> 8);
+	return ((float)r+(float)g+(float)b) * (1.0f / 3);
+}
+
 static float rects_intersect(Rect r1, Rect r2) {
 	if (r1.pos.x >= r2.pos.x + r2.size.x) return false; // r1 is to the right of r2
 	if (r2.pos.x >= r1.pos.x + r1.size.x) return false; // r2 is to the right of r1

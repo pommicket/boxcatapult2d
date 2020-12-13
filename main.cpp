@@ -214,7 +214,7 @@ int main(void) {
 	}
 
 	SDL_Window *window = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		720, 720, SDL_WINDOW_SHOWN|SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
+		1280, 720, SDL_WINDOW_SHOWN|SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE);
 	if (!window) {
 		die("%s", SDL_GetError());
 	}
@@ -229,7 +229,6 @@ int main(void) {
 	SDL_GL_SetSwapInterval(1); // vsync
 
 	frame.memory_size = (size_t)16 << 20;
-	frame.memory_size = (size_t)250L << 20; // @TODO @TEMPORARY
 
 #if DEBUG
 	{

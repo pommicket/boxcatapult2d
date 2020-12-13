@@ -333,7 +333,9 @@ static v2 setup_rand_point(void);
 #define PLATFORM_ROTATE_CHANCE 0.5f // chance that the platform will be a rotating one (platforms can be moving and rotating)
 
 static void platform_random(Platform *platform) {
-	platform->color = rand_u32() | 0xFF;
+	do {
+		platform->color = rand_u32() | 0xFF;
+	} while (rgba_brightness(platform->color) < 0.5f); // ensure color is visible
 	platform->radius = rand_uniform(PLATFORM_RADIUS_MIN, PLATFORM_RADIUS_MAX);
 	platform->center = setup_rand_point();
 	platform->start_angle = rand_uniform(0, PIf);

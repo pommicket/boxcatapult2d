@@ -167,7 +167,7 @@ typedef struct {
 #define MAX_PLATFORMS 32
 typedef struct {
 	float score; // distance this setup can throw the ball
-	bool mutated;
+	u64 mutations;
 	u32 nplatforms;
 	Platform platforms[MAX_PLATFORMS];
 } Setup;
@@ -179,6 +179,8 @@ typedef struct {
 	float aspect_ratio; // width / height
 
 	v2 mouse_pos; // mouse position in Box2D (not GL) coordinates
+	v2 mouse_pos_gl; // mouse position in GL coordinates
+
 	bool shift, ctrl; // is either shift/ctrl key down?
 
 	float dt; // time in seconds since last frame
@@ -197,6 +199,10 @@ typedef struct {
 	bool building; // is the user building a setup?
 	bool setting_move_p2; // is the user setting the move_p2 of the platform they're placing?
 	bool simulating; // are we simulating the world's physics?
+	bool evolve_menu; // is the evolve menu shown?
+	bool evolving; // are we simulating generations?
+
+	u64 generation; // which generation we are on
 
 	b2World *world; // Box2D world
 
