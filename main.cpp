@@ -432,6 +432,7 @@ int main(void) {
 			input->mouse_x = x;
 			input->mouse_y = y;
 		}
+
 		
 		{
 			Uint32 this_frame_ticks = SDL_GetTicks();
@@ -443,6 +444,8 @@ int main(void) {
 		}
 
 		sim_frame(&frame);
+
+		SDL_SetWindowFullscreen(window, frame.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 
 		SDL_SetWindowTitle(window, frame.title);
 

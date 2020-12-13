@@ -260,6 +260,17 @@ void sim_frame(Frame *frame) {
 		correct_mouse_button(state, &r->button);
 	}
 
+	if (keys_pressed[KEY_F11]) {
+		frame->fullscreen = !frame->fullscreen;
+		if (input->nkey_presses == 1) {
+			input->nkey_presses = 0; // consume this key press
+		}
+	}
+	if (state->ctrl && keys_down[KEY_Q]) {
+		frame->close = true;
+		return;
+	}
+
 	state->win_width  = (float)width;
 	state->win_height = (float)height;
 	state->aspect_ratio = state->win_width / state->win_height;

@@ -65,6 +65,7 @@ typedef struct {
 typedef struct {
 	Input input;
 	i32 width, height; // window width and height in pixels
+	bool fullscreen;
 	bool close; // should the window be closed? default: input.closed
 	void *memory;
 	size_t memory_size;

@@ -1,7 +1,0 @@
-Roboto font (assets/font.ttf):
-	Courtesy of Google Fonts.
-	Apache 2.0 license (see: assets/apache-2.0.txt)
-STB truetype (lib/stb_truetype.h):
-	See: https://github.com/nothings/stb
-Box2D:
-	See: https://box2d.org
