@@ -219,6 +219,12 @@ int main(void) {
 		die("%s", SDL_GetError());
 	}
 
+	{ // set icon
+		SDL_Surface *icon = SDL_LoadBMP("assets/icon.bmp");
+		SDL_SetWindowIcon(window, icon);
+		SDL_FreeSurface(icon);
+	}
+
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 	SDL_GLContext glctx = SDL_GL_CreateContext(window);
